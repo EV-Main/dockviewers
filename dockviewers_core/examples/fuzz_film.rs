@@ -163,7 +163,7 @@ fn main() {
 	trace.truncate(full.min((args.max_s / step_s).floor() as usize).max(2));
 	let dur = (trace.len() - 1) as f64 * step_s + HOLD_S;
 
-	let out = args.out.unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/.readme_assets/fuzz.svg"));
+	let out = args.out.unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/.readme_assets/assets/fuzz.svg"));
 	std::fs::write(&out, render(&trace, step_s, dur)).expect("write the SVG");
 	eprintln!(
 		"\nfilmed seed {seed} ({} of {} buckets): {full} events, {} rendered, {dur:.1}s -> {}",

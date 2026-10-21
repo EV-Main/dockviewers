@@ -40,7 +40,7 @@
           jobs.other.augment = [{
             name = "asset-gate";
             args = {
-              asset = "docs/.readme_assets/fuzz.svg";
+              asset = "docs/.readme_assets/assets/fuzz.svg";
               command = "nix run .#film";
               everySeconds = 86400;
             };
@@ -58,8 +58,9 @@
       {
         packages =
           let
-            rustc = rust;
-            cargo = rust;
+            build_rust = v_flakes.rs.build_nightly system;
+            rustc = build_rust;
+            cargo = build_rust;
             rustPlatform = pkgs.makeRustPlatform {
               inherit rustc cargo stdenv;
             };
@@ -79,10 +80,12 @@
             };
           };
 
-        # `nix run .#dev -- <framework>` boots the matching example (default: dioxus). Extra args
-        # pass through to the underlying serve command, e.g. `nix run .#dev -- leptos --port 9000`.
+        apps.help = v_flakes.utils.help { inherit pkgs self system; };
+
+        # Extra args pass through to the underlying serve command, e.g. `nix run .#dev -- leptos --port 9000`.
         apps.dev = {
           type = "app";
+          meta.description = "Serve the insilico example: `nix run .#dev -- [dioxus|leptos]` (default dioxus)";
           program = "${pkgs.writeShellScript "dev" ''
             framework="$1"; shift 2>/dev/null || true
             [ -z "$framework" ] && framework=dioxus
@@ -101,18 +104,18 @@
           ''}";
         };
 
-        # Redraws the README's fuzz film. The seed is pinned rather than left to the film's own
-        # best-of-scan: an asset a CI job diffs has to be a function of the tree alone, and
-        # best-of-scan makes it a function of the scan too.
+        # The seed is pinned rather than left to the film's own best-of-scan: an asset a CI job
+        # diffs has to be a function of the tree alone, and best-of-scan makes it a function of the scan too.
         apps.film = {
           type = "app";
+          meta.description = "Redraw the README's fuzz film";
           program = pkgs.lib.getExe (pkgs.writeShellApplication {
             name = "film";
             runtimeInputs = with pkgs; [ rust git pkg-config openssl mold ];
             text = ''
               cd "$(git rev-parse --show-toplevel)"
               cargo run --example fuzz_film -p dockviewers_core -- \
-                --seed 172 --out "''${ASSET_OUT:-''${1:-docs/.readme_assets/fuzz.svg}}"
+                --seed 172 --out "''${ASSET_OUT:-''${1:-docs/.readme_assets/assets/fuzz.svg}}"
             '';
           });
         };
