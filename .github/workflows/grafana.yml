@@ -32,7 +32,11 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-bindgen-cli@0.2.125
-      - run: sudo apt-get update && sudo apt-get install -y binaryen
+      # Ubuntu's binaryen exports wasm-bindgen's externref table as the funcref one; 132 is what was verified.
+      - name: binaryen
+        run: |
+          curl -sfL https://github.com/WebAssembly/binaryen/releases/download/version_132/binaryen-version_132-x86_64-linux.tar.gz | tar xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/binaryen-version_132/bin" >> "$GITHUB_PATH"
       - name: Build wasm
         working-directory: .
         run: |
