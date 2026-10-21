@@ -1,0 +1,56 @@
+name: Grafana plugin
+
+# A `grafana-v<version>` tag releases `dockviewers_grafana/plugin` as the zip Grafana's
+# `plugins.preinstall_sync` downloads.
+on:
+  push:
+    tags: ['grafana-v*']
+
+permissions:
+  contents: write
+
+# .cargo/config.toml pins rustc-wrapper=sccache for local dev; runners have no sccache.
+env:
+  RUSTC_WRAPPER: ""
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dockviewers_grafana/plugin
+    steps:
+      - uses: actions/checkout@v4
+      - name: Tag matches package.json
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          [ "$GITHUB_REF_NAME" = "grafana-v$version" ] || { echo "tag $GITHUB_REF_NAME, package.json $version" >&2; exit 1; }
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli@0.2.125
+      - run: sudo apt-get update && sudo apt-get install -y binaryen
+      - name: Build wasm
+        working-directory: .
+        run: |
+          cargo build --release -p dockviewers_grafana --target wasm32-unknown-unknown
+          wasm-bindgen --target web --out-dir dockviewers_grafana/plugin/src/wasm target/wasm32-unknown-unknown/release/dockviewers_grafana.wasm
+          wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int -o dockviewers_grafana/plugin/src/wasm/dockviewers_grafana_bg.wasm dockviewers_grafana/plugin/src/wasm/dockviewers_grafana_bg.wasm
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: dockviewers_grafana/plugin/.nvmrc
+          cache: npm
+          cache-dependency-path: dockviewers_grafana/plugin/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck && npm run lint && npm run build
+      - name: Zip
+        run: |
+          cp -r dist evmain-dockviewers-app
+          zip -r "evmain-dockviewers-app-$VERSION.zip" evmain-dockviewers-app
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" "evmain-dockviewers-app-$VERSION.zip" --title "Grafana plugin $VERSION" --notes-file CHANGELOG.md

@@ -54,6 +54,12 @@ Bindings (`dockviewers_dioxus`, `dockviewers_leptos`) hold `PackedState` in one 
 cell, forward DOM events into it, render the view-model, and expose `PackedApi` — a cheap
 handle over that cell — to the host through `on_band`.
 
+`dockviewers_grafana` is a *host* of the Leptos binding, not a third binding: a Grafana app
+plugin (`plugin/`, TS + `@grafana/scenes`) whose wasm half mounts `PackedArea` with one bare slot
+per panel, and the plugin portals each panel's native `VizPanel` into its slot. Everything
+Grafana-shaped — the save-model conversion, the `gridPos` seed, keybinds clear of Grafana's —
+stays inside that crate. It is released as a plugin zip on `grafana-v*` tags, not to crates.io.
+
 ## The seed cache
 
 A layout is stored per `Band` (`sm`/`md`/`xl`), not per `Breakpoint`: neighbouring
@@ -89,7 +95,7 @@ cache missed. Precedence is therefore: client cache → host default → host bu
 
 ## References
 
-- `docs/refs/dockview-core` was the port source for the original split-tree design; the
+- `docs/refs/dockview/packages/dockview-core` was the port source for the original split-tree design; the
   packed grid replaced it, so it is history rather than a spec.
 - insilicoterminal (the visual target) is a *custom* Vue split-tree, not a library — only
   the look is taken from it.

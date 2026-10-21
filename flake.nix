@@ -54,6 +54,61 @@
           badges = [ "msrv" "crates_io" "docs_rs" "loc" "ci" ];
         };
         combined = v_flakes.utils.combine { inherit rust; modules = [ rs github readme ]; };
+
+        # The crate graph pins wasm-bindgen =0.2.125, and the CLI must match it; nixpkgs carries another.
+        wasm-bindgen-cli = pkgs.buildWasmBindgenCli rec {
+          src = pkgs.fetchCrate {
+            pname = "wasm-bindgen-cli";
+            version = "0.2.125";
+            hash = "sha256-zRawtjxMOdTMX+mZaiNR3YYfTiZJhf9qj7kXSSeMxrc=";
+          };
+          cargoDeps = pkgs.rustPlatform.fetchCargoVendor {
+            inherit src;
+            inherit (src) pname version;
+            hash = "sha256-aZCfgR23Qb0Pn4Mm4ToMtuuRQqSJjXCR9li/VvP5CTM=";
+          };
+        };
+        # Prod runs 12.3.1 and the plugin builds against its libraries; nixpkgs is a major ahead.
+        grafana = pkgs.fetchzip {
+          url = "https://dl.grafana.com/oss/release/grafana-12.3.1.linux-amd64.tar.gz";
+          hash = "sha256-PKOxXRmqtLVneGsQO8phLXnacXaRRWfDQDPu3g9f6Lo=";
+        };
+        # The plugin against a local Grafana, provisioned with a testdata twin of devops' `ev-deployments`.
+        # Rust changes need a restart; the TS side rebuilds on save.
+        devGrafana = pkgs.writeShellApplication {
+          name = "dev-grafana";
+          runtimeInputs = [ rust pkgs.mold pkgs.pkg-config pkgs.openssl wasm-bindgen-cli pkgs.nodejs_24 ];
+          text = ''
+            root="$(git rev-parse --show-toplevel)"
+            plugin="$root/dockviewers_grafana/plugin"
+            state="$root/tmp/grafana"
+            cargo b -p dockviewers_grafana --target wasm32-unknown-unknown
+            wasm-bindgen --target web --out-dir "$plugin/src/wasm" "$root/target/wasm32-unknown-unknown/debug/dockviewers_grafana.wasm"
+            [ -d "$plugin/node_modules" ] || npm --prefix "$plugin" ci
+            rm -rf "$plugin/dist" # so the wait below sees this run's build
+            mkdir -p "$state/plugins"
+            ln -sfn "$plugin/dist" "$state/plugins/evmain-dockviewers-app"
+            npm --prefix "$plugin" run dev &
+            trap 'kill %1' EXIT
+            # first build has to land before Grafana scans for plugins
+            until [ -f "$plugin/dist/plugin.json" ]; do sleep 1; done
+            # development: plugin files are read live, so watch rebuilds (new chunks) serve without a restart
+            GF_DEFAULT_APP_MODE=development \
+            GF_SERVER_HTTP_PORT=54581 \
+            GF_PATHS_DATA="$state/data" \
+            GF_PATHS_LOGS="$state/logs" \
+            GF_PATHS_PLUGINS="$state/plugins" \
+            GF_PATHS_PROVISIONING="$plugin/provisioning" \
+            DV_FIXTURES="$plugin/provisioning/fixtures" \
+            GF_AUTH_ANONYMOUS_ENABLED=true \
+            GF_AUTH_ANONYMOUS_ORG_ROLE=Admin \
+            GF_AUTH_DISABLE_LOGIN_FORM=true \
+            GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=evmain-dockviewers-app \
+            GF_NEWS_NEWS_FEED_ENABLED=false \
+            GF_PLUGINS_PREINSTALL_DISABLED=true \
+              ${grafana}/bin/grafana server --homepath ${grafana} "$@"
+          '';
+        };
       in
       {
         packages =
@@ -86,23 +141,29 @@
         # Extra args pass through to the underlying serve command, e.g. `nix run .#dev -- leptos --port 9000`.
         apps.dev = {
           type = "app";
-          meta.description = "Serve the insilico example: `nix run .#dev -- [dioxus|leptos]` (default dioxus)";
-          program = "${pkgs.writeShellScript "dev" ''
-            framework="$1"; shift 2>/dev/null || true
-            [ -z "$framework" ] && framework=dioxus
-            case "$framework" in
-              dioxus)
-                exec ${pkgs.dioxus-cli}/bin/dx serve --example insilico --package dockviewers_dioxus "$@"
-                ;;
-              leptos)
-                cd dockviewers_leptos && exec ${pkgs.trunk}/bin/trunk serve "$@"
-                ;;
-              *)
-                echo "usage: nix run .#dev -- [dioxus|leptos] [extra serve args]" >&2
-                exit 1
-                ;;
-            esac
-          ''}";
+          meta.description = "Serve an example: `nix run .#dev -- [dioxus|leptos|grafana]` (default dioxus)";
+          program = pkgs.lib.getExe (pkgs.writeShellApplication {
+            name = "dev";
+            runtimeInputs = [ rust pkgs.mold pkgs.pkg-config pkgs.openssl wasm-bindgen-cli pkgs.nodejs_24 ];
+            text = ''
+              framework="''${1:-dioxus}"; shift 2>/dev/null || true
+              case "$framework" in
+                dioxus)
+                  exec ${pkgs.dioxus-cli}/bin/dx serve --example insilico --package dockviewers_dioxus "$@"
+                  ;;
+                leptos)
+                  cd dockviewers_leptos && exec ${pkgs.trunk}/bin/trunk serve "$@"
+                  ;;
+                grafana)
+                  exec ${devGrafana}/bin/dev-grafana "$@"
+                  ;;
+                *)
+                  echo "usage: nix run .#dev -- [dioxus|leptos|grafana] [extra serve args]" >&2
+                  exit 1
+                  ;;
+              esac
+            '';
+          });
         };
 
         # The seed is pinned rather than left to the film's own best-of-scan: an asset a CI job
@@ -142,6 +203,9 @@
               dioxus-cli
               # Serves the Leptos CSR example: `nix run .#dev -- leptos`.
               trunk
+              # `dockviewers_grafana/plugin`, and its wasm glue
+              nodejs_24
+              wasm-bindgen-cli
             ] ++ pre-commit-check.enabledPackages ++ combined.enabledPackages;
 
             env.RUST_BACKTRACE = 1;

@@ -11,6 +11,11 @@ before.
   key, and `Alt+Shift+S` only calls the host hook. Playwright gives each test a fresh context, so
   the cache starts empty without any wiping (an `addInitScript` clear would also run on `reload`
   and destroy what the test just saved).
+- `grafana.spec.mjs` — the Grafana plugin (`dockviewers_grafana`) against `nix run .#dev -- grafana`
+  and its testdata fixture: panels render natively in tiles, tab-joins switch panels, an inactive
+  tab issues no queries, the root re-measures on a container-only resize, the cache survives a
+  reload, `?` stays Grafana's, and an idle dock mutates nothing. Chromium only, as its own project:
+  `npm test -- --project grafana` (`GRAFANA_URL` overrides `http://127.0.0.1:54581`).
 
 ## Run
 
@@ -23,7 +28,7 @@ dx serve --example insilico --package dockviewers_dioxus --platform web --port 8
 then, from this dir:
 
 ```sh
-npm install            # pinned to @playwright/test 1.60.0 (matches the nix browser set)
+npm install            # pinned to @playwright/test 1.63.0 (matches the nix browser set)
 npm test
 ```
 
@@ -36,7 +41,7 @@ DOCKVIEW_URL=http://127.0.0.1:8122/ npm test
 ## NixOS
 
 Playwright's own browser downloads don't run on NixOS; use the nix-provided set instead. The pin
-`@playwright/test@1.60.0` matches `chromium-1223`/`firefox-1522`, which `playwright-driver.browsers`
+`@playwright/test@1.63.0` matches `chromium-1243`/`firefox-1543`, which `playwright-driver.browsers`
 ships. Export its store path before running:
 
 ```sh
