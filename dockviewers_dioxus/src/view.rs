@@ -361,7 +361,7 @@ pub fn PackedArea(panels: Signal<Vec<DockPanel>>, on_band: Option<Callback<Packe
 								span { class: "dv-help-key", {chord.clone()} }
 							}
 						}
-						div { class: "dv-help-foot", "click anywhere or press ? to close" }
+						div { class: "dv-help-foot", "click anywhere to close" }
 					}
 				}
 			}

@@ -8,7 +8,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use dockviewers_core::{Band, CSS, Config, Group, GroupId, MinSize, PackedState, PanelId, model::serial::LoadError};
-use leptos::{ev, prelude::*};
+use leptos::prelude::*;
 
 use crate::panel::DockPanel;
 
@@ -101,23 +101,34 @@ pub fn PackedArea(
 	let api = PackedApi { state };
 	let root = NodeRef::<leptos::html::Div>::new();
 
-	// The first measure, once the root mounts (its content box lands a real step size).
-	root.on_load({
-		let on_band = on_band.clone();
-		move |el| {
-			#[cfg(target_arch = "wasm32")]
-			state.update(|s| s.set_root(el.clone().into()));
-			measure(el.into(), state, api, on_band.as_ref())
-		}
-	});
-
-	// A container resize (window is the only source) may cross a band, so it runs the latch too.
-	let resize = window_event_listener(ev::resize, move |_| {
-		if let Some(el) = root.get_untracked() {
-			measure(el.into(), state, api, on_band.as_ref());
-		}
-	});
-	on_cleanup(move || resize.remove());
+	// Observing the root rather than the window: a host can resize the container on its own (a
+	// sidebar docking, a split pane), and any resize may cross a band, so it runs the latch too.
+	#[cfg(target_arch = "wasm32")]
+	{
+		use wasm_bindgen::{JsCast, closure::Closure};
+		let on_resize = Closure::<dyn Fn()>::new({
+			let on_band = on_band.clone();
+			move || {
+				if let Some(el) = root.get_untracked() {
+					measure(el.into(), state, api, on_band.as_ref());
+				}
+			}
+		});
+		let observer = web_sys::ResizeObserver::new(on_resize.as_ref().unchecked_ref()).expect("ResizeObserver is baseline in every browser");
+		root.on_load({
+			let observer = observer.clone();
+			let on_band = on_band.clone();
+			move |el| {
+				state.update(|s| s.set_root(el.clone().into()));
+				observer.observe(&el);
+				measure(el.into(), state, api, on_band.as_ref())
+			}
+		});
+		let held = send_wrapper::SendWrapper::new((observer, on_resize));
+		on_cleanup(move || held.take().0.disconnect());
+	}
+	#[cfg(not(target_arch = "wasm32"))]
+	root.on_load(move |el| measure(el.into(), state, api, on_band.as_ref()));
 
 	// Undo history: snapshot a settled layout after each structural edit. The `wants_undo_snapshot`
 	// read subscribes this effect; the guarded update doesn't re-fire it into a loop.
@@ -136,8 +147,8 @@ pub fn PackedArea(
 		use wasm_bindgen::JsCast;
 		let cursor = Rc::new(Cell::new((0.0_f64, 0.0_f64)));
 		let track = cursor.clone();
-		let pointermove = window_event_listener(ev::pointermove, move |e| track.set((e.client_x() as f64, e.client_y() as f64)));
-		let keydown = window_event_listener(ev::keydown, move |e| {
+		let pointermove = window_event_listener(leptos::ev::pointermove, move |e| track.set((e.client_x() as f64, e.client_y() as f64)));
+		let keydown = window_event_listener(leptos::ev::keydown, move |e| {
 			// Don't hijack typing: ignore keys aimed at an editable field.
 			if let Some(el) = e.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) {
 				if matches!(el.tag_name().as_str(), "INPUT" | "TEXTAREA" | "SELECT") || el.dyn_ref::<web_sys::HtmlElement>().is_some_and(web_sys::HtmlElement::is_content_editable) {
@@ -307,7 +318,7 @@ pub fn PackedArea(
 											}
 										})
 										.collect_view()}
-									<div class="dv-help-foot">"click anywhere or press ? to close"</div>
+									<div class="dv-help-foot">"click anywhere to close"</div>
 								</div>
 							</div>
 						}

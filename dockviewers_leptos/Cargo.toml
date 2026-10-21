@@ -24,11 +24,14 @@ path = "../examples/insilico_leptos/main.rs"
 default = []
 csr = ["leptos/csr"]
 
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+send_wrapper = "0.6"
+
 [dependencies]
 dockviewers_core.workspace = true
 leptos.workspace = true
 wasm-bindgen.workspace = true
-web-sys = { workspace = true, features = ["Window", "Storage", "Document", "Element", "HtmlElement", "HtmlDivElement", "DomRect", "Node", "NodeList", "EventTarget", "KeyboardEvent", "MouseEvent", "PointerEvent", "console"] }
+web-sys = { workspace = true, features = ["Window", "Storage", "Document", "Element", "HtmlElement", "HtmlDivElement", "DomRect", "Node", "NodeList", "EventTarget", "KeyboardEvent", "MouseEvent", "PointerEvent", "ResizeObserver", "console"] }
 
 [lints]
 workspace = true
