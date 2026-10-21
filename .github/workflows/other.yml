@@ -6,28 +6,53 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
     - id: bucket
       name: Interval bucket
       run: echo "key=asset-gate-docs--readme_assets-fuzz-svg-$(( $(date -u +%s) /
         86400 ))" >> $GITHUB_OUTPUT
     - id: guard
       name: Has this interval been checked
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@v5
       with:
         key: ${{ steps.bucket.outputs.key }}
         path: .asset-gate-stamp
     - if: steps.guard.outputs.cache-hit != 'true'
+      name: Lean cache setup
+      run: 'mkdir -p /tmp/nix-lean-cache
+
+        chmod 0777 /tmp/nix-lean-cache
+
+        printf ''#!/bin/sh\nexport PATH=/nix/var/nix/profiles/default/bin:$PATH\nnix
+        copy --to "file:///tmp/nix-lean-cache?compression=zstd&parallel-compression=true"
+        $OUT_PATHS || true\n'' > /tmp/nix-lean-pbh.sh
+
+        chmod 0755 /tmp/nix-lean-pbh.sh
+
+        '
+      shell: bash
+    - if: steps.guard.outputs.cache-hit != 'true'
       name: Install Nix
       uses: DeterminateSystems/nix-installer-action@main
       with:
-        extra-conf: lazy-trees = true
+        extra-conf: 'lazy-trees = true
+
+          post-build-hook = /tmp/nix-lean-pbh.sh
+
+          extra-substituters = file:///tmp/nix-lean-cache
+
+          extra-trusted-substituters = file:///tmp/nix-lean-cache
+
+          require-sigs = false
+
+          '
     - if: steps.guard.outputs.cache-hit != 'true'
-      name: Setup Nix cache
-      uses: nix-community/cache-nix-action@v7
+      name: Lean nix cache (built-only paths)
+      uses: actions/cache@v5
       with:
-        primary-key: nix-${{ runner.os }}-${{ hashFiles('**/flake.lock') }}
-        restore-prefixes-first-match: nix-${{ runner.os }}-
+        key: nix-lean-${{ runner.os }}-${{ github.run_id }}
+        path: /tmp/nix-lean-cache
+        restore-keys: nix-lean-${{ runner.os }}-
     - if: steps.guard.outputs.cache-hit != 'true'
       name: Regenerate docs/.readme_assets/fuzz.svg and compare
       run: "export ASSET_OUT=\"$(mktemp -d)/$(basename docs/.readme_assets/fuzz.svg)\"\
@@ -37,7 +62,7 @@ jobs:
         \n  exit 1\nfi\necho \"docs/.readme_assets/fuzz.svg is current\"\n: > .asset-gate-stamp\n"
     - if: steps.guard.outputs.cache-hit != 'true'
       name: Record this interval as checked
-      uses: actions/cache/save@v4
+      uses: actions/cache/save@v5
       with:
         key: ${{ steps.bucket.outputs.key }}
         path: .asset-gate-stamp
@@ -46,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
     - env:
         loc_gist_token: ${{ secrets.loc_gist_token }}
       name: Ensure loc_gist_token secret is configured
@@ -89,12 +114,15 @@ jobs:
         '
     - name: Display generated JSON
       run: cat ${{ steps.count.outputs.pname }}-loc.json
-    - name: Update gist
-      uses: exuanbo/actions-deploy-gist@v1
-      with:
-        file_path: ${{ steps.count.outputs.pname }}-loc.json
-        gist_id: b48e6f02c61942200e7d1e3eeabf9bcb
-        token: ${{ secrets.loc_gist_token }}
+    - env:
+        GH_TOKEN: ${{ secrets.loc_gist_token }}
+      name: Update gist
+      run: 'F="${{ steps.count.outputs.pname }}-loc.json"
+
+        gh api -X PATCH gists/b48e6f02c61942200e7d1e3eeabf9bcb -f "files[$F][content]=$(cat
+        "$F")" --silent
+
+        '
 name: Other
 'on':
   pull_request: {}

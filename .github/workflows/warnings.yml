@@ -11,8 +11,8 @@ jobs:
     needs: pre_ci
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
+    - uses: actions/checkout@v5
       with:
         path: my_gh_stuff
         repository: valeratrades/v_flakes
@@ -37,10 +37,10 @@ jobs:
     needs: pre_ci
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: dtolnay/rust-toolchain@clippy
     - name: Download modified by pre-ci Cargo.toml files
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v7
       with:
         name: modified-cargo-files
     - run: rm -f .cargo/config.toml .cargo/config
@@ -54,21 +54,22 @@ jobs:
     needs: pre_ci
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: dtolnay/rust-toolchain@nightly
     - name: Download modified by pre-ci Cargo.toml files
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v7
       with:
         name: modified-cargo-files
     - uses: dtolnay/install@cargo-docs-rs
-    - run: "for p in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[].name');\
-        \ do\n  cargo docs-rs -p \"$p\"\ndone\n"
+    - run: "for p in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[]\
+        \ | select([.targets[].kind[]] | any(. == \"lib\" or . == \"proc-macro\"))\
+        \ | .name'); do\n  cargo docs-rs -p \"$p\"\ndone\n"
     timeout-minutes: 45
   rust-machete:
     name: Unused Dependencies
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: cachix/install-nix-action@v31
     - name: Cargo Machete
       run: "\t\t\t\tnix run github:valeratrades/v_flakes#cargo-machete\n\t\t\t\texit_code=$?\n\
@@ -78,7 +79,7 @@ jobs:
     name: Cargo Sorted
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - name: Installation
       uses: taiki-e/install-action@v2
       with:
@@ -91,7 +92,7 @@ jobs:
     name: Sorted Derives
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: cachix/install-nix-action@v31
     - name: Assert derives are sorted
       run: "\t\t\t\t# `sort-derives` is argv[1] here: the binary is a cargo subcommand,\
@@ -105,7 +106,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
     - name: Installation
       uses: taiki-e/install-action@v2
       with:

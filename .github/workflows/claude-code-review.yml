@@ -1,5 +1,7 @@
 jobs:
   claude-review:
+    if: github.event.repository.owner.type == 'User' || github.event.repository.custom_properties.pr_auto_review
+      == 'true'
     permissions:
       contents: read
       id-token: write
@@ -21,13 +23,14 @@ jobs:
         \ → Actions (repo-level, or org-level with 'All repositories' visibility —\
         \ org secrets reach public repos on any plan).\"\n  fi\n  exit 1\nfi\n"
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         fetch-depth: 1
     - id: claude-review
       name: Run Claude Code Review
       uses: anthropics/claude-code-action@v1
       with:
+        claude_args: --permission-mode bypassPermissions
         claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
         plugin_marketplaces: https://github.com/anthropics/claude-code.git
         plugins: code-review@claude-code-plugins

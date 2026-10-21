@@ -5,7 +5,7 @@ jobs:
       '@claude')) || (github.event_name == 'pull_request_review' && contains(github.event.review.body,
       '@claude')) || (github.event_name == 'issues' && (contains(github.event.issue.body,
       '@claude') || contains(github.event.issue.title, '@claude') || github.event.label.name
-      == 'claude'))
+      == 'ext:claude'))
     permissions:
       actions: read
       contents: read
@@ -28,7 +28,7 @@ jobs:
         \ → Actions (repo-level, or org-level with 'All repositories' visibility —\
         \ org secrets reach public repos on any plan).\"\n  fi\n  exit 1\nfi\n"
     - name: Checkout repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
       with:
         fetch-depth: 1
     - id: claude
@@ -38,12 +38,12 @@ jobs:
         additional_permissions: 'actions: read
 
           '
-        claude_args: --allowedTools "Bash(gh pr create:*),Bash(gh pr list:*)" --append-system-prompt
-          "Whenever you push commits to a branch, always finish by opening a pull
-          request against the default branch with gh pr create (check gh pr list --head
-          <branch> first; if one already exists, pushing was enough)."
+        claude_args: --permission-mode bypassPermissions --append-system-prompt "Whenever
+          you push commits to a branch, always finish by opening a pull request against
+          the default branch with gh pr create (check gh pr list --head <branch> first;
+          if one already exists, pushing was enough)."
         claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
-        label_trigger: claude
+        label_trigger: ext:claude
 name: Claude Code
 'on':
   issue_comment:

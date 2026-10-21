@@ -19,6 +19,9 @@ too_many_arguments = "allow"
 [workspace.lints.rust]
 unused_features = "allow"
 
+[workspace.lints.cargo]
+non_kebab_case_bins = "allow"
+
 [workspace.dependencies]
 clap = { version = "^4.5.4", features = ["derive"] }
 dioxus = { version = "^0.7", default-features = false, features = ["lib"] } # no `devtools`/`launch`: consumers choose those

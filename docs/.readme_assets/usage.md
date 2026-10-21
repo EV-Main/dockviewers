@@ -32,7 +32,7 @@ fn app() -> Element {
 }
 ```
 
-Runnable demo: `dx serve --example insilico --package dockviewers_dioxus --platform web` — or open the [hosted demo](https://ev-invest.github.io/dockviewers/), no local setup needed. The Leptos binding is the same component with `Arc<dyn Fn(PackedApi) + Send + Sync>` in place of `Callback` — see `examples/insilico_leptos`.
+Runnable demo: `dx serve --example insilico --package dockviewers_dioxus --platform web` — or open the [hosted demo](https://@@OWNER@@.github.io/dockviewers/), no local setup needed. The Leptos binding is the same component with `Arc<dyn Fn(PackedApi) + Send + Sync>` in place of `Callback` — see `examples/insilico_leptos`.
 
 **Props:** `panels` (order = stable overlay render order — don't reorder it, that remounts panels), `on_band` (see below), `config`.
 

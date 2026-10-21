@@ -13,7 +13,7 @@ jobs:
     needs: pre_ci
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{matrix.rust}}
@@ -24,9 +24,16 @@ jobs:
       run: echo "RUSTFLAGS=-Dwarnings" >> $GITHUB_ENV
     - if: matrix.rust == 'nightly'
       name: Enable type layout randomization
-      run: echo RUSTFLAGS=${RUSTFLAGS}\ -Zrandomize-layout\ --cfg=exhaustive >> $GITHUB_ENV
+      run: 'printf ''#!/bin/sh\nexec "$@" -Zrandomize-layout --cfg=exhaustive\n''
+        > /tmp/randomize-layout.sh
+
+        chmod +x /tmp/randomize-layout.sh
+
+        echo RUSTC_WORKSPACE_WRAPPER=/tmp/randomize-layout.sh >> $GITHUB_ENV
+
+        '
     - name: Download modified by pre-ci Cargo.toml files
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v7
       with:
         name: modified-cargo-files
     - run: cargo update
