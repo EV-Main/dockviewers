@@ -63,6 +63,17 @@ test('a tab-join switches panels, and the inactive tab stays quiet on refresh', 
 	expect(asked.some((b) => b.includes('"q-9"')), 'the inactive tab must not query').toBe(false)
 })
 
+test('a closed panel reopens from a tile’s +', async ({ page }) => {
+	const tile = (title) => page.locator('.dv-tile', { has: tab(page, title) })
+	await tile('Flux').locator('button[title="Close"]').click()
+	await expect(page.locator('.dv-tile')).toHaveCount(PANELS - 1)
+	await tile('Switch').locator('button[title="Add window as a tab"]').click()
+	await expect(page.getByRole('menuitem')).toHaveText(['Flux · AA'])
+	await page.getByRole('menuitem', { name: 'Flux · AA' }).click()
+	await expect(tile('Switch').locator('.dv-tab')).toHaveText(['Switch · AA', 'Flux · AA'])
+	await expect(overlay(page, 9).locator('[data-testid="data-testid panel content"]')).toBeVisible()
+})
+
 test('a container-only resize re-measures', async ({ page }) => {
 	const before = await page.locator('.dv-tile').first().boundingBox()
 	await page.evaluate(() => (document.querySelector('.dv-packed').parentElement.style.right = '400px'))
