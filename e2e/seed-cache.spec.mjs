@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
 
 // The framework's built-in client-side layout cache, exercised through the insilico example (which
-// carries zero persistence code of its own — that is the point). `Alt+t s s` writes the live layout to
+// carries zero persistence code of its own — that is the point). `Alt+z s s` writes the live layout to
 // `localStorage` under `<storage_key>-<band>`; a reload restores it instead of re-seeding; a
-// viewport change into another band uses a different key; `Alt+t s p` only calls the host hook. Both
+// viewport change into another band uses a different key; `Alt+z s p` only calls the host hook. Both
 // say what happened in the dock's own `.tl-notice`.
 
 const KEY = 'insilico-layout'
@@ -19,8 +19,8 @@ const boot = async (page) => {
 const chord = async (page, ...keys) => {
 	for (const k of keys) await page.keyboard.press(k)
 }
-const CACHE = ['Alt+t', 's', 's']
-const PUBLISH = ['Alt+t', 's', 'p']
+const CACHE = ['Alt+z', 's', 's']
+const PUBLISH = ['Alt+z', 's', 'p']
 
 const cache = (page, band) => page.evaluate((k) => localStorage.getItem(k), `${KEY}-${band}`)
 const keys = (page) => page.evaluate(() => Object.keys(localStorage).sort())

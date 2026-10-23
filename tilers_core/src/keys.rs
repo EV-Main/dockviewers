@@ -124,7 +124,7 @@ impl Default for Keymap {
 		};
 		Self {
 			leader: Trigger {
-				other: Chord { key: "t", alt: true, .. },
+				other: Chord { key: "z", alt: true, .. },
 				mac: Chord { key: "t", ctrl: true, .. },
 			},
 			scope: vec![
@@ -133,14 +133,14 @@ impl Default for Keymap {
 				run(key("f"), Builtin::Maximize),
 				run(key("Backspace"), Builtin::Close),
 				run(key("d"), Builtin::Inspect),
-				run(key("?"), Builtin::Help),
 				Binding {
 					on: key("s"),
 					node: Node::Scope {
-						label: "layout",
+						label: "save/cache layout",
 						children: vec![run(key("s"), Builtin::Cache), run(key("p"), Builtin::Publish)],
 					},
 				},
+				run(key("?"), Builtin::Help),
 			],
 			root: vec![
 				run(cmd("z"), Builtin::Undo),
@@ -155,7 +155,6 @@ impl Default for Keymap {
 #[derive(Clone, Debug, PartialEq)]
 pub struct KeyInput {
 	pub key: String,
-	pub code: String,
 	pub ctrl: bool,
 	pub alt: bool,
 	pub meta: bool,
@@ -175,7 +174,6 @@ impl From<&web_sys::KeyboardEvent> for KeyInput {
 		});
 		Self {
 			key: e.key(),
-			code: e.code(),
 			ctrl: e.ctrl_key(),
 			alt: e.alt_key(),
 			meta: e.meta_key(),
@@ -186,27 +184,17 @@ impl From<&web_sys::KeyboardEvent> for KeyInput {
 }
 
 impl KeyInput {
-	/// The key a [`Chord`] is matched against, or `None` for a modifier-only keydown. An ASCII `key`
-	/// keeps the layout's mnemonics (AZERTY, Dvorak); anything else (Russian `г`, macOS Option's `†`
-	/// or `Dead`) falls back to the physical `code`. Letter case comes from Shift alone, so CapsLock
-	/// doesn't turn undo into redo.
+	/// The key a [`Chord`] is matched against, or `None` for a modifier-only keydown. Only the `key`
+	/// the layout produced, never the physical `code` (docs/ARCHITECTURE.md § Invariants). Letter case
+	/// comes from Shift alone, so CapsLock doesn't turn undo into redo.
 	pub(crate) fn normalized(&self) -> Option<String> {
 		if matches!(self.key.as_str(), "Shift" | "Control" | "Alt" | "Meta" | "AltGraph" | "CapsLock" | "OS" | "Fn") {
 			return None;
 		}
-		let base = if self.key.is_ascii() && self.key != "Dead" {
-			self.key.clone()
-		} else if let Some(c) = self.code.strip_prefix("Key").filter(|c| c.len() == 1) {
-			c.to_string()
-		} else if let Some(d) = self.code.strip_prefix("Digit") {
-			d.to_string()
-		} else {
-			self.key.clone()
-		};
-		let mut chars = base.chars();
+		let mut chars = self.key.chars();
 		Some(match (chars.next(), chars.next()) {
 			(Some(c), None) if c.is_ascii_alphabetic() => (if self.shift { c.to_ascii_uppercase() } else { c.to_ascii_lowercase() }).to_string(),
-			_ => base,
+			_ => self.key.clone(),
 		})
 	}
 }

@@ -45,7 +45,7 @@ test.describe('default platform', () => {
 		const logs = []
 		page.on('console', (m) => m.text().startsWith('tilers keybind') && logs.push(m.text()))
 		await edit(page)
-		await page.keyboard.press('Alt+t')
+		await page.keyboard.press('Alt+z')
 		expect(await lastPrevented(page), 'the leader is ours').toBe(true)
 		await page.keyboard.press('u')
 		expect(await lastPrevented(page), 'leader u undoes').toBe(true)
@@ -65,7 +65,7 @@ test.describe('default platform', () => {
 		// A long delay, so the hidden phase outlasts any round-trip between keypress and assertion.
 		await page.evaluate(() => document.documentElement.style.setProperty('--tl-hint-delay', '1500ms'))
 		const hint = page.locator('.tl-hint')
-		await page.keyboard.press('Alt+t')
+		await page.keyboard.press('Alt+z')
 		await expect(hint).toHaveCount(1)
 		await expect(hint, 'a fast chord never flashes the hint').toBeHidden()
 		await expect(hint).toBeVisible({ timeout: 5_000 })
@@ -80,7 +80,7 @@ test.describe('default platform', () => {
 		await tile.locator('.tl-action[title="Keybinds"]').click()
 		await expect(page.locator('.tl-help')).toBeVisible()
 		await expect(page.locator('.tl-help-pane')).toHaveText(title)
-		await expect(page.locator('.tl-help')).toContainText('Alt+t s s')
+		await expect(page.locator('.tl-help')).toContainText('Alt+z s s')
 	})
 })
 
@@ -90,9 +90,9 @@ test.describe('macOS', () => {
 		await boot(page)
 	})
 
-	test('Control+t is the leader and Alt+t is not', async ({ page }) => {
-		await page.keyboard.press('Alt+t')
-		expect(await lastPrevented(page), 'Alt+t composes on macOS, so it is not bound').toBe(false)
+	test('Control+t is the leader and Alt+z is not', async ({ page }) => {
+		await page.keyboard.press('Alt+z')
+		expect(await lastPrevented(page), 'Alt+z composes on macOS, so it is not bound').toBe(false)
 		await expect(page.locator('.tl-hint')).toHaveCount(0)
 		await page.keyboard.press('Control+t')
 		expect(await lastPrevented(page)).toBe(true)

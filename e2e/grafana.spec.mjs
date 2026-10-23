@@ -92,7 +92,7 @@ test('a container-only resize re-measures', async ({ page }) => {
 test('leader s s then a reload restores the layout', async ({ page }) => {
 	await join(page, 'Flux', 'Switch')
 	const edited = await geometry(page)
-	for (const k of ['Alt+t', 's', 's']) await page.keyboard.press(k)
+	for (const k of ['Alt+z', 's', 's']) await page.keyboard.press(k)
 	await page.reload()
 	await boot(page, page.url())
 	expect(await geometry(page)).toEqual(edited)
@@ -103,7 +103,7 @@ test('? is Grafana’s shortcuts modal; leader ? is ours', async ({ page }) => {
 	await expect(page.getByRole('dialog')).toBeVisible()
 	await expect(page.locator('.tl-help')).toHaveCount(0)
 	await page.keyboard.press('Escape')
-	await page.keyboard.press('Alt+t')
+	await page.keyboard.press('Alt+z')
 	await page.keyboard.press('Shift+Slash')
 	await expect(page.locator('.tl-help')).toBeVisible()
 })

@@ -49,10 +49,10 @@ flowchart LR
   dispatch, the measure/refit path, the view-model getters (incl. `hint`/`help`), and the
   **band latch** (below).
 - `keys` — `Keymap` (leader, scope, root) of `Binding`s, its per-platform resolution into a
-  chord trie, and `KeyInput` normalization (layout- and platform-independent key identity).
-- `config` — `Config` (steps/row height/keymap/storage key/save hook),
+  chord trie, and `KeyInput` normalization (the `key` sent, case from Shift alone).
+- `config` — `Config` (steps/row height/keymap/storage key/publish hook),
   `Breakpoint` (5 widths, sets the column count) and `Band` (3 widths, the persistence
-  key), `Saved`.
+  key).
 - `persist` — `localStorage` read/write, wasm-only (a native no-op), crate-internal.
 - `css` — the one structural stylesheet; colors and sizes are `--tl-*` custom properties.
 
@@ -116,6 +116,10 @@ in a microtask after the keydown, so it may `notify` synchronously. Precedence i
 - The framework's global key footprint is exactly `Keymap::root` ∪ {leader} ∪ {Esc while the
   help, an inspect popup or a chord is open}. Everything else waits behind the leader.
 - A key aimed at an editable never acts, so text undo and typing stay native.
+- A bind matches the `key` the user's layout produced, never the physical `code`: the layout is
+  unknowable from the page, so reading a position as a letter assumes one (qwerty) and binds a key
+  other than the one the user pressed. A layout that sends no bound key (Cyrillic, macOS Option's
+  `†`) acts on nothing; a host wanting it binds those keys too.
 - The reducer is time-free; any delay (the which-key reveal) is presentation, in CSS.
 
 ## References

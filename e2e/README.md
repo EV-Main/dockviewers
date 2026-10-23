@@ -3,21 +3,21 @@
 Everything here runs in **both** Chromium and Firefox, since that split is what silently broke
 before.
 
-- `keybind.spec.mjs` — the key footprint: bare letters stay the page's, `Alt+t` then a key acts
+- `keybind.spec.mjs` — the key footprint: bare letters stay the page's, `Alt+z` then a key acts
   (`preventDefault()` + a `tilers keybind:` console line), `Control+z` is ours on the page and the
   browser's inside an input, the which-key `.tl-hint` reveals only after its delay, macOS takes
   `Control+t` (via a `navigator.platform` override), and a tile's `?` opens the help naming it. The
   lib prevents only when it acted, so the undo checks make an edit first.
-- `seed-cache.spec.mjs` — the built-in per-band `localStorage` cache: `Alt+t s s` writes
+- `seed-cache.spec.mjs` — the built-in per-band `localStorage` cache: `Alt+z s s` writes
   `<storage_key>-<band>`, a reload restores it instead of re-seeding, another band uses another
-  key, and `Alt+t s p` only calls the host hook. Each says so in the dock's `.tl-notice`. Playwright gives each test a fresh context, so
+  key, and `Alt+z s p` only calls the host hook. Each says so in the dock's `.tl-notice`. Playwright gives each test a fresh context, so
   the cache starts empty without any wiping (an `addInitScript` clear would also run on `reload`
   and destroy what the test just saved).
 - `grafana.spec.mjs` — the Grafana plugin (`tilers_grafana`) against `nix run .#dev -- grafana`
   and its testdata fixture: panels render natively in tiles, tab-joins switch panels, an inactive
   tab issues no queries, the root re-measures on a container-only resize, the cache survives a
   reload, declared and compiled mins hold when the window halves, a second load takes compiled sizes
-  from the cache, `?`, `d` and `Control+z` stay Grafana's while `Alt+t ?` opens ours, and an idle dock mutates nothing. Chromium only, as its own project:
+  from the cache, `?`, `d` and `Control+z` stay Grafana's while `Alt+z ?` opens ours, and an idle dock mutates nothing. Chromium only, as its own project:
   `npm test -- --project grafana` (`GRAFANA_URL` overrides `http://127.0.0.1:54581`).
 
 ## Run

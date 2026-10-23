@@ -104,7 +104,7 @@ pub enum Aim {
 
 /// An unbound key or an editable target: either cancels whatever the sequence had opened.
 pub fn noisy(inputs: &[KeyInput]) -> bool {
-	inputs.iter().any(|k| k.editable || k.code == "KeyJ") // by `code`: a Cyrillic layout reports it as `ж`
+	inputs.iter().any(|k| k.editable || matches!(k.key.as_str(), "j" | "ж"))
 }
 /// Apply `action`, returning the invariant it violated. Several invariants are only expressible
 /// *around* an action (a cancel is a no-op, an unarmed release only activates), so they live here
@@ -308,7 +308,6 @@ pub fn generate(frng: &mut Frng, world: &World, weights: &[u32; N_KINDS]) -> Opt
 				inputs.insert(
 					i,
 					KeyInput {
-						code: "ShiftLeft".into(),
 						shift: true,
 						..input(Chord { key: "Shift", .. })
 					},
@@ -322,10 +321,10 @@ pub fn generate(frng: &mut Frng, world: &World, weights: &[u32; N_KINDS]) -> Opt
 				let i = frng.below(inputs.len() as u32) as usize;
 				inputs[i].editable = true;
 			}
-			// A Cyrillic layout: the same physical key produces a non-Latin `key`.
+			// A Cyrillic layout: a letter key sends a non-Latin `key`, which nothing binds.
 			if frng.below(6) == 0 {
 				let i = frng.below(inputs.len() as u32) as usize;
-				if inputs[i].code.starts_with("Key") {
+				if inputs[i].key.len() == 1 && inputs[i].key.chars().all(|c| c.is_ascii_alphabetic()) {
 					inputs[i].key = "ж".into();
 				}
 			}
@@ -370,7 +369,6 @@ fn input(c: Chord) -> KeyInput {
 	let letter = c.key.len() == 1 && c.key.chars().all(|ch| ch.is_ascii_alphabetic());
 	KeyInput {
 		key: c.key.to_string(),
-		code: if letter { format!("Key{}", c.key.to_ascii_uppercase()) } else { c.key.to_string() },
 		ctrl: c.ctrl,
 		alt: c.alt,
 		meta: c.meta,

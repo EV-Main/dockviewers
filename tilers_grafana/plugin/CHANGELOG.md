@@ -6,6 +6,8 @@ Resizing a panel by its side moves the line it shares with its neighbours: they 
 take it back), every panel along that line moving together, instead of being pushed down. A left edge
 with nothing against it has a grip of its own. Dragging back restores what a resize shrank.
 `leader s s` says it cached the layout in a toast.
+The leader is `Alt+z` (was `Alt+t`), and binds match the key your layout sends, never its physical
+position.
 
 ## 0.3.2
 

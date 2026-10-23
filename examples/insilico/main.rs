@@ -178,7 +178,7 @@ fn seed_fresh(panels: Signal<Vec<DockPanel>>, counter: Signal<u64>, a: PackedApi
 }
 
 /// The whole persistence story: name a `localStorage` namespace and the framework caches this
-/// browser's layout per band on `Alt+t s s`, restoring it before `on_band` ever runs, and says so.
+/// browser's layout per band on `Alt+z s s`, restoring it before `on_band` ever runs, and says so.
 /// `on_publish` is where a host with a server would `fetch` the JSON up as the default *other*
 /// visitors land on. This example just says what it would send.
 fn insilico_config(api: Signal<Option<PackedApi>>) -> Config {
