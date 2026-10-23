@@ -141,6 +141,23 @@ test('an idle dock does no work beyond a native dashboard', async ({ page }) => 
 test('declared and compiled mins hold when the window halves', async ({ page }) => {
 	expect(AUTHORED.length && COMPILED.length, 'the fixture declares both kinds').toBeTruthy()
 	const sizes = await Promise.all(COMPILED.map((id) => compiled(page, id)))
+	/** Px each clipping box in panel `id`'s slot clips, kept per element; `more` = boxes clipping past the first call's. */
+	const clip = (id) =>
+		page.$eval(`.dv-grafana-slot[data-panel="panel-${id}"]`, (s) => {
+			const now = new Map()
+			for (const e of [s, ...s.querySelectorAll('*')]) {
+				const c = getComputedStyle(e)
+				const px = Math.max(e.scrollHeight - e.clientHeight, e.scrollWidth - e.clientWidth) - 1
+				if (px > 0 && (e === s || c.overflowX !== 'visible' || c.overflowY !== 'visible')) now.set(e, px)
+			}
+			window.dvClip ??= new Map()
+			const base = window.dvClip.get(s) ?? (window.dvClip.set(s, now), now)
+			return [...now].filter(([e, px]) => px > (base.get(e) ?? 0)).map(([e, px]) => `${e.className} +${px}`)
+		})
+	for (const id of COMPILED) {
+		await page.waitForTimeout(500) // the compiled floor's reflow lands
+		expect(await clip(id), `panel ${id} clips nothing at full size beyond its own widgets`).toEqual([])
+	}
 	await page.setViewportSize({ width: 1600, height: 500 })
 	const slotH = (id) => page.$eval(`.dv-grafana-slot[data-panel="panel-${id}"]`, (s) => s.clientHeight)
 	for (const [id, minH] of AUTHORED) {
@@ -148,13 +165,7 @@ test('declared and compiled mins hold when the window halves', async ({ page }) 
 	}
 	for (const [i, id] of COMPILED.entries()) {
 		await expect.poll(() => slotH(id), `panel ${id} keeps its compiled ${sizes[i].h}px`).toBeGreaterThanOrEqual(sizes[i].h)
-		const clipped = await page.$eval(`.dv-grafana-slot[data-panel="panel-${id}"]`, (s) =>
-			[s, ...s.querySelectorAll('*')].filter((e) => {
-				const c = getComputedStyle(e)
-				return (e === s || c.overflowX !== 'visible' || c.overflowY !== 'visible') && (e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1)
-			}).length
-		)
-		expect(clipped, `panel ${id}'s content is whole`).toBe(0)
+		expect(await clip(id), `panel ${id} clips no more at half height`).toEqual([])
 	}
 })
 

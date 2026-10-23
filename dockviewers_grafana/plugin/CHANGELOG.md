@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1
+
+`precompile` compiles canvases whose buttons clip their own label (a placement shorter than Grafana's button):
+only clipping beyond what the content does in an unbounded box counts as not fitting.
+
 ## 0.2.0
 
 Panels keep their content as the window shrinks: a tile's floor follows the px its content needs at the live

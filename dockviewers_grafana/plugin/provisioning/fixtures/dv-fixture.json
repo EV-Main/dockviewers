@@ -131,6 +131,47 @@
         "width": 100,
         "height": 30
        }
+      },
+      {
+       "type": "button",
+       "name": "restart",
+       "config": {
+        "text": {
+         "mode": "fixed",
+         "fixed": "⟳ Restart"
+        },
+        "style": {
+         "variant": "destructive"
+        },
+        "api": {
+         "endpoint": "/api/health",
+         "method": "GET",
+         "queryParams": [],
+         "headerParams": [],
+         "contentType": "application/json",
+         "data": "{}"
+        }
+       },
+       "background": {
+        "color": {
+         "fixed": "transparent"
+        }
+       },
+       "border": {
+        "color": {
+         "fixed": "transparent"
+        }
+       },
+       "placement": {
+        "top": 8,
+        "left": 116,
+        "width": 110,
+        "height": 30
+       },
+       "constraint": {
+        "vertical": "top",
+        "horizontal": "left"
+       }
       }
      ],
      "background": {

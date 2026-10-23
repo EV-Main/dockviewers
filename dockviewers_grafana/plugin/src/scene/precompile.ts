@@ -46,29 +46,32 @@ export function cached(p: Precompile): Size | undefined {
   return hit.key === stamp(p) ? { w: hit.w, h: hit.h } : undefined;
 }
 
-/** Measure the least box `panel`'s content fits in without overflowing, then cache it. */
+/**
+ * Measure the least box `panel`'s content fits in, then cache it. "Fits" is relative to an unbounded box:
+ * a widget may clip its own content at any size (a canvas button placed shorter than Grafana's button),
+ * which no slot size cures, so only clipping beyond that baseline counts.
+ */
 export async function compile(p: Precompile, panel: VizPanel, slot: HTMLElement, signal: AbortSignal): Promise<Size> {
   await visible(slot, signal);
   await loaded(panel, signal);
   const saved = slot.style.cssText;
   slot.style.overflow = 'hidden';
   try {
-    const fits = async (w: number, h: number) => {
+    const probe = async (w: number, h: number) => {
       slot.style.width = `${w}px`;
       slot.style.height = `${h}px`;
       for (let i = 0; i < PROBE_FRAMES; i++) {
         await new Promise(requestAnimationFrame);
       }
       signal.throwIfAborted();
-      return !overflowed(slot);
+      return clipping(slot);
     };
-    let base = slot.clientWidth;
-    if (!(await fits(base, MAX_PX))) {
-      base = MAX_PX;
-      if (!(await fits(base, MAX_PX))) {
-        throw new Error(`${panel.state.key} overflows even a ${MAX_PX}px box: its content has no natural size to precompile`);
-      }
+    const unbounded = await probe(MAX_PX, MAX_PX);
+    if ((unbounded.get(slot) ?? 0) > 0) {
+      throw new Error(`${panel.state.key} overflows even a ${MAX_PX}px box: its content has no natural size to precompile`);
     }
+    const fits = async (w: number, h: number) => [...(await probe(w, h))].every(([e, px]) => px <= (unbounded.get(e) ?? 0));
+    const base = (await fits(slot.parentElement!.clientWidth, MAX_PX)) ? slot.parentElement!.clientWidth : MAX_PX;
     const h = await least(MAX_PX, (h) => fits(base, h));
     const w = await least(base, (w) => fits(w, h));
     localStorage.setItem(p.store, JSON.stringify({ key: stamp(p), w, h }));
@@ -92,19 +95,18 @@ async function least(hi: number, ok: (x: number) => Promise<boolean>): Promise<n
   return hi;
 }
 
-/** Some box in `slot` clips content: the slot itself, or any descendant that doesn't let it spill. */
-function overflowed(slot: HTMLElement): boolean {
-  const over = (e: Element) => e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1;
-  if (over(slot)) {
-    return true;
-  }
-  for (const e of slot.querySelectorAll('*')) {
+/** Px clipped by each box in `slot` that clips: the slot itself, or any descendant that doesn't let content spill. */
+function clipping(slot: HTMLElement): Map<Element, number> {
+  const out = new Map<Element, number>();
+  for (const e of [slot, ...slot.querySelectorAll('*')]) {
     const s = getComputedStyle(e);
-    if ((s.overflowX !== 'visible' || s.overflowY !== 'visible') && over(e)) {
-      return true;
+    // 1px: subpixel layout rounds scroll sizes up
+    const px = Math.max(e.scrollHeight - e.clientHeight, e.scrollWidth - e.clientWidth) - 1;
+    if (px > 0 && (e === slot || s.overflowX !== 'visible' || s.overflowY !== 'visible')) {
+      out.set(e, px);
     }
   }
-  return false;
+  return out;
 }
 
 /** `LazyLoader` renders the panel only once its slot is on screen. */
