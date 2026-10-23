@@ -8,9 +8,9 @@ before.
   browser's inside an input, the which-key `.tl-hint` reveals only after its delay, macOS takes
   `Control+t` (via a `navigator.platform` override), and a tile's `?` opens the help naming it. The
   lib prevents only when it acted, so the undo checks make an edit first.
-- `seed-cache.spec.mjs` — the built-in per-band `localStorage` cache: `Alt+z s s` writes
+- `seed-cache.spec.mjs` — the built-in per-band `localStorage` cache: `Alt+z s` writes
   `<storage_key>-<band>`, a reload restores it instead of re-seeding, another band uses another
-  key, and `Alt+z s p` only calls the host hook. Each says so in the dock's `.tl-notice`. Playwright gives each test a fresh context, so
+  key, and `Alt+z S` caches and calls the host hook. Each says so in the dock's `.tl-notice`. Playwright gives each test a fresh context, so
   the cache starts empty without any wiping (an `addInitScript` clear would also run on `reload`
   and destroy what the test just saved).
 - `grafana.spec.mjs` — the Grafana plugin (`tilers_grafana`) against `nix run .#dev -- grafana`

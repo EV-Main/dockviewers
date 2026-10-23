@@ -698,6 +698,9 @@ impl PackedState {
 				true
 			}
 			Builtin::Publish => {
+				if self.cfg.storage_key.is_some() {
+					self.run(Command::Builtin(Builtin::Cache));
+				}
 				let hook = self.cfg.on_publish.clone().expect("Publish resolves only with on_publish");
 				let (band, json) = (self.band(), self.save());
 				// after this keydown releases the state, so the hook may `notify` back into it

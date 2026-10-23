@@ -179,10 +179,12 @@ fn the_key_sent_is_the_key_bound() {
 }
 
 #[test]
-fn layout_scope_tracks_what_the_host_wired() {
+fn saving_tracks_what_the_host_wired() {
 	let (mut s, _) = edited(Config::default());
-	assert!(press(&mut s, seq("Alt+z s")).iter().skip(1).all(|o| !o.prevent_default), "no storage, no hook: the whole layout scope is pruned");
-	assert!(!help_rows(&mut s).iter().any(|(k, _)| k.starts_with("Alt+z s")), "{:?}", help_rows(&mut s));
+	for keys in ["Alt+z s", "Alt+z S"] {
+		assert!(!press(&mut s, seq(keys))[1].prevent_default, "no storage, no hook: {keys} is unbound");
+	}
+	assert!(!help_rows(&mut s).iter().any(|(k, _)| k == "Alt+z s" || k == "Alt+z Shift+s"), "{:?}", help_rows(&mut s));
 
 	let cached = Config {
 		storage_key: Some("t".into()),
@@ -190,17 +192,17 @@ fn layout_scope_tracks_what_the_host_wired() {
 	};
 	let (mut s, _) = edited(cached);
 	let rows = help_rows(&mut s);
-	assert!(rows.iter().any(|(k, _)| k == "Alt+z s s"), "{rows:?}");
-	assert!(!rows.iter().any(|(k, _)| k == "Alt+z s p"), "publish needs `on_publish`: {rows:?}");
-	let outs = press(&mut s, seq("Alt+z s p"));
-	assert!(!outs[2].prevent_default, "an unbound publish is inert");
+	assert!(rows.iter().any(|(k, _)| k == "Alt+z s"), "{rows:?}");
+	assert!(!rows.iter().any(|(k, _)| k == "Alt+z Shift+s"), "publish needs `on_publish`: {rows:?}");
+	let outs = press(&mut s, seq("Alt+z S"));
+	assert!(!outs[1].prevent_default, "an unbound publish is inert");
 	assert!(s.notice().is_none(), "an unbound publish says nothing");
-	press(&mut s, seq("Alt+z s s"));
+	press(&mut s, seq("Alt+z s"));
 	let cached = s.notice().expect("caching says so without any host code");
 	assert!(cached.text.contains(&s.band().to_string()), "{cached:?}");
 	press(&mut s, seq("Alt+z"));
 	assert!(s.notice().is_none(), "an opened chord's hint takes the notice's corner");
-	press(&mut s, seq("s s"));
+	press(&mut s, seq("s"));
 	assert_ne!(s.notice().expect("cached again").seq, cached.seq, "a repeat is a new notice, so it shows again");
 
 	let got = Rc::new(RefCell::new(Vec::new()));
@@ -209,14 +211,22 @@ fn layout_scope_tracks_what_the_host_wired() {
 		on_publish: Some(Rc::new(move |band, json| sink.borrow_mut().push((band, json)))),
 		..Default::default()
 	};
-	let (mut s, _) = edited(hooked);
-	assert!(press(&mut s, seq("Alt+z s p"))[2].prevent_default);
+	let (mut s, _) = edited(hooked.clone());
+	assert!(press(&mut s, seq("Alt+z S"))[1].prevent_default);
 	match got.borrow().as_slice() {
 		[(band, json)] => assert_eq!((*band, json), (s.band(), &s.save())),
 		_ => panic!("publish hands exactly one layout to the host"),
 	}
-	assert!(!press(&mut s, seq("Alt+z s s"))[2].prevent_default, "no storage key: caching would write nothing");
-	assert!(s.notice().is_none(), "the framework says nothing of a publish: its outcome is the host's");
+	assert!(!press(&mut s, seq("Alt+z s"))[1].prevent_default, "no storage key: caching would write nothing");
+	assert!(s.notice().is_none(), "no storage key: nothing cached, and a publish's outcome is the host's to say");
+
+	let (mut s, _) = edited(Config {
+		storage_key: Some("t".into()),
+		..hooked
+	});
+	press(&mut s, seq("Alt+z S"));
+	assert!(s.notice().is_some(), "publishing caches first");
+	assert_eq!(got.borrow().len(), 2, "and still hands the layout to the host");
 }
 
 #[test]

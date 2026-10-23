@@ -80,7 +80,7 @@ test.describe('default platform', () => {
 		await tile.locator('.tl-action[title="Keybinds"]').click()
 		await expect(page.locator('.tl-help')).toBeVisible()
 		await expect(page.locator('.tl-help-pane')).toHaveText(title)
-		await expect(page.locator('.tl-help')).toContainText('Alt+z s s')
+		await expect(page.locator('.tl-help')).toContainText('Alt+z s')
 	})
 })
 

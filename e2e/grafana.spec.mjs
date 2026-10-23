@@ -89,10 +89,10 @@ test('a container-only resize re-measures', async ({ page }) => {
 	await expect.poll(async () => (await page.locator('.tl-tile').first().boundingBox()).width).toBeLessThan(before.width - 50)
 })
 
-test('leader s s then a reload restores the layout', async ({ page }) => {
+test('leader s then a reload restores the layout', async ({ page }) => {
 	await join(page, 'Flux', 'Switch')
 	const edited = await geometry(page)
-	for (const k of ['Alt+z', 's', 's']) await page.keyboard.press(k)
+	for (const k of ['Alt+z', 's']) await page.keyboard.press(k)
 	await page.reload()
 	await boot(page, page.url())
 	expect(await geometry(page)).toEqual(edited)

@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
 
 // The framework's built-in client-side layout cache, exercised through the insilico example (which
-// carries zero persistence code of its own — that is the point). `Alt+z s s` writes the live layout to
+// carries zero persistence code of its own — that is the point). `Alt+z s` writes the live layout to
 // `localStorage` under `<storage_key>-<band>`; a reload restores it instead of re-seeding; a
-// viewport change into another band uses a different key; `Alt+z s p` only calls the host hook. Both
+// viewport change into another band uses a different key; `Alt+z S` also calls the host hook. Both
 // say what happened in the dock's own `.tl-notice`.
 
 const KEY = 'insilico-layout'
@@ -19,21 +19,20 @@ const boot = async (page) => {
 const chord = async (page, ...keys) => {
 	for (const k of keys) await page.keyboard.press(k)
 }
-const CACHE = ['Alt+z', 's', 's']
-const PUBLISH = ['Alt+z', 's', 'p']
+const CACHE = ['Alt+z', 's']
+const PUBLISH = ['Alt+z', 'Shift+S']
 
 const cache = (page, band) => page.evaluate((k) => localStorage.getItem(k), `${KEY}-${band}`)
-const keys = (page) => page.evaluate(() => Object.keys(localStorage).sort())
 /** Tile geometry, in the skeleton's own order — the layout's observable signature. */
 const geometry = (page) => page.$$eval('.tl-tile', (els) => els.map((e) => e.getAttribute('style')))
 
 test.beforeEach(async ({ page }) => await boot(page))
 
-test('leader s s caches the current band under its own key', async ({ page }) => {
+test('leader s caches the current band under its own key', async ({ page }) => {
 	expect(await cache(page, 'xl'), 'a fresh profile starts with no cache').toBe(null)
 	await chord(page, ...CACHE)
 	const json = await cache(page, 'xl')
-	expect(json, 'leader s s must write the xl entry').not.toBe(null)
+	expect(json, 'leader s must write the xl entry').not.toBe(null)
 	expect(JSON.parse(json), 'the cached payload is the versioned layout').toHaveProperty('grid')
 	await expect(page.locator('.tl-notice'), 'caching says so without any host code').toContainText('xl')
 })
@@ -68,9 +67,8 @@ test('each band caches under its own key', async ({ page }) => {
 	expect(await cache(page, 'xl'), 'the xl entry must be untouched by an sm save').toBe(xl)
 })
 
-test('leader s p calls the host hook without touching the cache', async ({ page }) => {
-	const before = await keys(page)
+test('leader S caches, then calls the host hook', async ({ page }) => {
 	await chord(page, ...PUBLISH)
 	await expect(page.locator('.tl-notice'), "the example's publish hook reports through the dock").toContainText('publish')
-	expect(await keys(page), 'publish must not write localStorage').toEqual(before)
+	expect(await cache(page, 'xl'), 'publishing caches first').not.toBe(null)
 })

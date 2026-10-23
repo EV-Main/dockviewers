@@ -86,7 +86,8 @@ pub enum Builtin {
 	Help,
 	/// Write this band's layout to `localStorage`. Unbound without [`Config::storage_key`](crate::Config::storage_key).
 	Cache,
-	/// Hand this band's layout to [`Config::on_publish`](crate::Config::on_publish), which unbinds it when `None`.
+	/// [`Cache`](Self::Cache) when it is bound, then hand this band's layout to
+	/// [`Config::on_publish`](crate::Config::on_publish), which unbinds it when `None`.
 	Publish,
 }
 
@@ -100,7 +101,7 @@ impl Builtin {
 			Self::Inspect => "Inspect pane",
 			Self::Help => "Keybinds",
 			Self::Cache => "Cache layout",
-			Self::Publish => "Publish layout",
+			Self::Publish => "Cache and publish layout",
 		}
 	}
 }
@@ -133,13 +134,8 @@ impl Default for Keymap {
 				run(key("f"), Builtin::Maximize),
 				run(key("Backspace"), Builtin::Close),
 				run(key("d"), Builtin::Inspect),
-				Binding {
-					on: key("s"),
-					node: Node::Scope {
-						label: "save/cache layout",
-						children: vec![run(key("s"), Builtin::Cache), run(key("p"), Builtin::Publish)],
-					},
-				},
+				run(key("s"), Builtin::Cache),
+				run(key("S"), Builtin::Publish),
 				run(key("?"), Builtin::Help),
 			],
 			root: vec![
