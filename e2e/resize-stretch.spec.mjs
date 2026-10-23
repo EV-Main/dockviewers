@@ -7,7 +7,7 @@ import { expect, test } from '@playwright/test'
 test.beforeEach(async ({ page }) => {
 	await page.setViewportSize({ width: 1280, height: 720 })
 	await page.goto('/')
-	await page.waitForSelector('.dv-resize-handle', { timeout: 30_000 })
+	await page.waitForSelector('.tl-resize-handle', { timeout: 30_000 })
 })
 
 test('pulling a resize grip past the bottom edge keeps stretching the tile', async ({ page, browserName }) => {
@@ -15,11 +15,11 @@ test('pulling a resize grip past the bottom edge keeps stretching the tile', asy
 	// Playwright's juggler mangles out-of-viewport pointer coords (y=1200 arrives as a negative),
 	// so the past-the-fold leg is only verifiable in Chromium.
 	test.skip(browserName === 'firefox', 'juggler mangles out-of-viewport pointer coordinates')
-	const root = page.locator('.dv-packed')
+	const root = page.locator('.tl-packed')
 	const before = await root.evaluate((el) => ({ scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }))
 
 	// The grip lowest on screen belongs to the tile whose bottom is nearest the fold.
-	const grips = await page.locator('.dv-resize-handle').all()
+	const grips = await page.locator('.tl-resize-handle').all()
 	let grip = null
 	let gripBox = null
 	for (const g of grips) {

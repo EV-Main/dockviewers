@@ -1,4 +1,4 @@
-// Headless CDP probe for the dockview keybind listener. Launches headless chromium against the
+// Headless CDP probe for the tilers keybind listener. Launches headless chromium against the
 // running `dx serve` (insilico) and dispatches chords *synthetically* (bypassing the window
 // manager that eats real Alt+<key> presses).
 //
@@ -22,7 +22,7 @@ const chrome = spawn('chromium', [
 	'--headless=new',
 	'--no-sandbox',
 	`--remote-debugging-port=${PORT}`,
-	`--user-data-dir=${mkdtempSync(join(tmpdir(), 'dv-cdp-'))}`,
+	`--user-data-dir=${mkdtempSync(join(tmpdir(), 'tl-cdp-'))}`,
 	URL,
 ], { stdio: 'ignore' })
 
@@ -90,7 +90,7 @@ async function press(label, { code, key, vk, mods = 0 }) {
 
 // Focus a pane by clicking its header centre (sets the lib's `focused` group, which close/maximize need).
 const hdr = await send('Runtime.evaluate', {
-	expression: `(() => { const r = document.querySelector('.dv-header').getBoundingClientRect(); return JSON.stringify([r.x + r.width/2, r.y + r.height/2]) })()`,
+	expression: `(() => { const r = document.querySelector('.tl-header').getBoundingClientRect(); return JSON.stringify([r.x + r.width/2, r.y + r.height/2]) })()`,
 	returnByValue: true,
 })
 const [hx, hy] = JSON.parse(hdr.result.value)
@@ -109,9 +109,9 @@ await press('key "f"  @ code KeyP → un-maximize', { code: 'KeyP', key: 'f', vk
 await press('key "?"  @ code Slash → help', { code: 'Slash', key: '?', vk: 191, mods: MOD.Shift })
 await press('key "?"  @ code Slash → help off', { code: 'Slash', key: '?', vk: 191, mods: MOD.Shift })
 
-const tilesBefore = (await send('Runtime.evaluate', { expression: `document.querySelectorAll('.dv-tile').length`, returnByValue: true })).result.value
+const tilesBefore = (await send('Runtime.evaluate', { expression: `document.querySelectorAll('.tl-tile').length`, returnByValue: true })).result.value
 await press('Delete   → close (counts tiles)', { code: 'Delete', key: 'Delete', vk: 46 })
-const tilesAfter = (await send('Runtime.evaluate', { expression: `document.querySelectorAll('.dv-tile').length`, returnByValue: true })).result.value
+const tilesAfter = (await send('Runtime.evaluate', { expression: `document.querySelectorAll('.tl-tile').length`, returnByValue: true })).result.value
 console.log(`tiles: ${tilesBefore} → ${tilesAfter} ${tilesAfter < tilesBefore ? '✓ close removed a tile' : '✗ NOTHING CLOSED'}`)
 
 await press('key "j"  → unbound (expect prevented=false)', { code: 'KeyJ', key: 'j', vk: 74 })

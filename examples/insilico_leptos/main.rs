@@ -1,12 +1,12 @@
-//! A minimal Leptos smoke example proving one [`dockviewers_core`] engine drives the Leptos binding
+//! A minimal Leptos smoke example proving one [`tilers_core`] engine drives the Leptos binding
 //! exactly as it drives the Dioxus one: a handful of static panes seeded through the same
 //! [`PackedApi`], laid out by the same reducer. **Web-only** — run with `trunk serve` (or any CSR
 //! host); a native `cargo run` has no DOM to mount into.
 
 use std::sync::Arc;
 
-use dockviewers_leptos::{Config, DockPanel, Group, GroupId, MinSize, PackedApi, PackedArea, PanelId, Step};
 use leptos::prelude::*;
+use tilers_leptos::{Config, DockPanel, Group, GroupId, MinSize, PackedApi, PackedArea, PanelId, Step};
 
 fn main() {
 	#[cfg(target_arch = "wasm32")]

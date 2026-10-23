@@ -1,0 +1,32 @@
+[package]
+name = "tilers"
+version = "0.3.0"
+edition = "2024"
+description = "Packed-grid tiling/docking layout — a framework-agnostic engine with optional Dioxus and Leptos bindings behind feature flags. Panes split, resize, tab, float, and maximize, cached per screen band."
+license = "BlueOak-1.0.0"
+repository = "https://github.com/EV-Main/tilers"
+documentation = "https://docs.rs/tilers"
+readme = "../README.md"
+keywords = ["layout", "docking", "tiling", "dioxus", "leptos"]
+categories = ["gui", "wasm"]
+
+# The facade's own docs link into the binding re-exports, which only exist with their features on.
+[package.metadata.docs.rs]
+all-features = true
+
+# Facade over the ecosystem: the engine (`tilers_core`) is always present; a UI binding is
+# pulled in by its feature. Depending on this crate vs. the individual crates is purely ergonomic.
+[lib]
+
+[features]
+default = []
+dioxus = ["dep:tilers_dioxus"]
+leptos = ["dep:tilers_leptos"]
+
+[dependencies]
+tilers_core.workspace = true
+tilers_dioxus = { workspace = true, optional = true }
+tilers_leptos = { workspace = true, optional = true }
+
+[lints]
+workspace = true

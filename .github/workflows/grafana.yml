@@ -1,6 +1,6 @@
 name: Grafana plugin
 
-# A `grafana-v<version>` tag releases `dockviewers_grafana/plugin` as the zip Grafana's
+# A `grafana-v<version>` tag releases `tilers_grafana/plugin` as the zip Grafana's
 # `plugins.preinstall_sync` downloads.
 on:
   push:
@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: dockviewers_grafana/plugin
+        working-directory: tilers_grafana/plugin
     steps:
       - uses: actions/checkout@v4
       - name: Tag matches package.json
@@ -40,21 +40,21 @@ jobs:
       - name: Build wasm
         working-directory: .
         run: |
-          cargo build --release -p dockviewers_grafana --target wasm32-unknown-unknown
-          wasm-bindgen --target web --out-dir dockviewers_grafana/plugin/src/wasm target/wasm32-unknown-unknown/release/dockviewers_grafana.wasm
-          wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int -o dockviewers_grafana/plugin/src/wasm/dockviewers_grafana_bg.wasm dockviewers_grafana/plugin/src/wasm/dockviewers_grafana_bg.wasm
+          cargo build --release -p tilers_grafana --target wasm32-unknown-unknown
+          wasm-bindgen --target web --out-dir tilers_grafana/plugin/src/wasm target/wasm32-unknown-unknown/release/tilers_grafana.wasm
+          wasm-opt -Oz --enable-bulk-memory --enable-nontrapping-float-to-int -o tilers_grafana/plugin/src/wasm/tilers_grafana_bg.wasm tilers_grafana/plugin/src/wasm/tilers_grafana_bg.wasm
       - uses: actions/setup-node@v4
         with:
-          node-version-file: dockviewers_grafana/plugin/.nvmrc
+          node-version-file: tilers_grafana/plugin/.nvmrc
           cache: npm
-          cache-dependency-path: dockviewers_grafana/plugin/package-lock.json
+          cache-dependency-path: tilers_grafana/plugin/package-lock.json
       - run: npm ci
       - run: npm run typecheck && npm run lint && npm run build
       - name: Zip
         run: |
-          cp -r dist evmain-dockviewers-app
-          zip -r "evmain-dockviewers-app-$VERSION.zip" evmain-dockviewers-app
+          cp -r dist evmain-tilers-app
+          zip -r "evmain-tilers-app-$VERSION.zip" evmain-tilers-app
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" "evmain-dockviewers-app-$VERSION.zip" --title "Grafana plugin $VERSION" --notes-file CHANGELOG.md
+        run: gh release create "$GITHUB_REF_NAME" "evmain-tilers-app-$VERSION.zip" --title "Grafana plugin $VERSION" --notes-file CHANGELOG.md

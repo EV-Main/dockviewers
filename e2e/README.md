@@ -4,14 +4,14 @@ Everything here runs in **both** Chromium and Firefox, since that split is what 
 before.
 
 - `keybind.spec.mjs` — `PackedArea`'s `window` keydown listener must *recognize* its configured
-  binds. It asserts recognition (the lib calls `preventDefault()` + logs `dockview keybind:` the
+  binds. It asserts recognition (the lib calls `preventDefault()` + logs `tilers keybind:` the
   instant a bind matches), not the downstream action — so it's stable regardless of layout state.
 - `seed-cache.spec.mjs` — the built-in per-band `localStorage` cache: `Alt+S` writes
   `<storage_key>-<band>`, a reload restores it instead of re-seeding, another band uses another
   key, and `Alt+Shift+S` only calls the host hook. Playwright gives each test a fresh context, so
   the cache starts empty without any wiping (an `addInitScript` clear would also run on `reload`
   and destroy what the test just saved).
-- `grafana.spec.mjs` — the Grafana plugin (`dockviewers_grafana`) against `nix run .#dev -- grafana`
+- `grafana.spec.mjs` — the Grafana plugin (`tilers_grafana`) against `nix run .#dev -- grafana`
   and its testdata fixture: panels render natively in tiles, tab-joins switch panels, an inactive
   tab issues no queries, the root re-measures on a container-only resize, the cache survives a
   reload, declared and compiled mins hold when the window halves, a second load takes compiled sizes
@@ -23,7 +23,7 @@ before.
 Needs a host that mounts `PackedArea`. Serve the bundled example:
 
 ```sh
-dx serve --example insilico --package dockviewers_dioxus --platform web --port 8111
+dx serve --example insilico --package tilers_dioxus --platform web --port 8111
 ```
 
 then, from this dir:
@@ -33,10 +33,10 @@ npm install            # pinned to @playwright/test 1.63.0 (matches the nix brow
 npm test
 ```
 
-Point it at any other host (e.g. the real REA dashboard) with `DOCKVIEW_URL`:
+Point it at any other host (e.g. the real REA dashboard) with `TILERS_URL`:
 
 ```sh
-DOCKVIEW_URL=http://127.0.0.1:8122/ npm test
+TILERS_URL=http://127.0.0.1:8122/ npm test
 ```
 
 ## NixOS

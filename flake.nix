@@ -17,7 +17,7 @@
         # the nix store dedups it and sccache cross-references compilations.
         rust = v_flakes.rs.default_nightly system;
         pre-commit-check = pre-commit-hooks.lib.${system}.run (v_flakes.files.preCommit { inherit pkgs; });
-        manifest = (pkgs.lib.importTOML ./dockviewers/Cargo.toml).package;
+        manifest = (pkgs.lib.importTOML ./tilers/Cargo.toml).package;
         pname = manifest.name;
         stdenv = pkgs.stdenvAdapters.useMoldLinker pkgs.stdenv;
 
@@ -26,7 +26,7 @@
           build = {
             deny = false;
             workspace = let deprecate_by = "v1.0.0"; in {
-              "./dockviewers_core/" = [ "git_version" "log_directives" { deprecate = { by_version = deprecate_by; force = true; }; } ];
+              "./tilers_core/" = [ "git_version" "log_directives" { deprecate = { by_version = deprecate_by; force = true; }; } ];
             };
           };
         };
@@ -80,14 +80,14 @@
           runtimeInputs = [ rust pkgs.mold pkgs.pkg-config pkgs.openssl wasm-bindgen-cli pkgs.nodejs_24 ];
           text = ''
             root="$(git rev-parse --show-toplevel)"
-            plugin="$root/dockviewers_grafana/plugin"
+            plugin="$root/tilers_grafana/plugin"
             state="$root/tmp/grafana"
-            cargo b -p dockviewers_grafana --target wasm32-unknown-unknown
-            wasm-bindgen --target web --out-dir "$plugin/src/wasm" "$root/target/wasm32-unknown-unknown/debug/dockviewers_grafana.wasm"
+            cargo b -p tilers_grafana --target wasm32-unknown-unknown
+            wasm-bindgen --target web --out-dir "$plugin/src/wasm" "$root/target/wasm32-unknown-unknown/debug/tilers_grafana.wasm"
             [ -d "$plugin/node_modules" ] || npm --prefix "$plugin" ci
             rm -rf "$plugin/dist" # so the wait below sees this run's build
             mkdir -p "$state/plugins"
-            ln -sfn "$plugin/dist" "$state/plugins/evmain-dockviewers-app"
+            ln -sfn "$plugin/dist" "$state/plugins/evmain-tilers-app"
             npm --prefix "$plugin" run dev &
             trap 'kill %1' EXIT
             # first build has to land before Grafana scans for plugins
@@ -99,11 +99,11 @@
             GF_PATHS_LOGS="$state/logs" \
             GF_PATHS_PLUGINS="$state/plugins" \
             GF_PATHS_PROVISIONING="$plugin/provisioning" \
-            DV_FIXTURES="$plugin/provisioning/fixtures" \
+            TL_FIXTURES="$plugin/provisioning/fixtures" \
             GF_AUTH_ANONYMOUS_ENABLED=true \
             GF_AUTH_ANONYMOUS_ORG_ROLE=Admin \
             GF_AUTH_DISABLE_LOGIN_FORM=true \
-            GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=evmain-dockviewers-app \
+            GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=evmain-tilers-app \
             GF_NEWS_NEWS_FEED_ENABLED=false \
             GF_PLUGINS_PREINSTALL_DISABLED=true \
               ${grafana}/bin/grafana server --homepath ${grafana} "$@"
@@ -149,10 +149,10 @@
               framework="''${1:-dioxus}"; shift 2>/dev/null || true
               case "$framework" in
                 dioxus)
-                  exec ${pkgs.dioxus-cli}/bin/dx serve --example insilico --package dockviewers_dioxus "$@"
+                  exec ${pkgs.dioxus-cli}/bin/dx serve --example insilico --package tilers_dioxus "$@"
                   ;;
                 leptos)
-                  cd dockviewers_leptos && exec ${pkgs.trunk}/bin/trunk serve "$@"
+                  cd tilers_leptos && exec ${pkgs.trunk}/bin/trunk serve "$@"
                   ;;
                 grafana)
                   exec ${devGrafana}/bin/dev-grafana "$@"
@@ -176,7 +176,7 @@
             runtimeInputs = with pkgs; [ rust git pkg-config openssl mold ];
             text = ''
               cd "$(git rev-parse --show-toplevel)"
-              cargo run --example fuzz_film -p dockviewers_core -- \
+              cargo run --example fuzz_film -p tilers_core -- \
                 --seed 172 --out "''${ASSET_OUT:-''${1:-docs/.readme_assets/assets/fuzz.svg}}"
             '';
           });
@@ -203,7 +203,7 @@
               dioxus-cli
               # Serves the Leptos CSR example: `nix run .#dev -- leptos`.
               trunk
-              # `dockviewers_grafana/plugin`, and its wasm glue
+              # `tilers_grafana/plugin`, and its wasm glue
               nodejs_24
               wasm-bindgen-cli
             ] ++ pre-commit-check.enabledPackages ++ combined.enabledPackages;

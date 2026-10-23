@@ -1362,62 +1362,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dockviewers"
-version = "0.3.0"
-dependencies = [
- "dockviewers_core",
- "dockviewers_dioxus",
- "dockviewers_leptos",
-]
-
-[[package]]
-name = "dockviewers_core"
-version = "0.3.0"
-dependencies = [
- "clap",
- "serde",
- "serde_json",
- "v_utils",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
-name = "dockviewers_dioxus"
-version = "0.3.0"
-dependencies = [
- "dioxus",
- "dockviewers_core",
- "gloo-timers",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
-name = "dockviewers_grafana"
-version = "0.1.0"
-dependencies = [
- "console_error_panic_hook",
- "dockviewers_leptos",
- "js-sys",
- "leptos",
- "send_wrapper",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
-name = "dockviewers_leptos"
-version = "0.3.0"
-dependencies = [
- "dockviewers_core",
- "leptos",
- "send_wrapper",
- "wasm-bindgen",
- "web-sys",
-]
-
-[[package]]
 name = "document-features"
 version = "0.2.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4279,6 +4223,62 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dc0ed6038fcbc0795aca7c92963ddda636573b956679204e044492d2b13c8f64"
 dependencies = [
  "pin-project-lite",
+]
+
+[[package]]
+name = "tilers"
+version = "0.3.0"
+dependencies = [
+ "tilers_core",
+ "tilers_dioxus",
+ "tilers_leptos",
+]
+
+[[package]]
+name = "tilers_core"
+version = "0.3.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "v_utils",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
+name = "tilers_dioxus"
+version = "0.3.0"
+dependencies = [
+ "dioxus",
+ "gloo-timers",
+ "tilers_core",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
+name = "tilers_grafana"
+version = "0.1.0"
+dependencies = [
+ "console_error_panic_hook",
+ "js-sys",
+ "leptos",
+ "send_wrapper",
+ "tilers_leptos",
+ "wasm-bindgen",
+ "web-sys",
+]
+
+[[package]]
+name = "tilers_leptos"
+version = "0.3.0"
+dependencies = [
+ "leptos",
+ "send_wrapper",
+ "tilers_core",
+ "wasm-bindgen",
+ "web-sys",
 ]
 
 [[package]]

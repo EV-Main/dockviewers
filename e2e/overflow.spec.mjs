@@ -13,7 +13,7 @@ const CLASSIC_SCROLLBARS = '::-webkit-scrollbar { width: 15px; height: 15px; } :
 
 test.beforeEach(async ({ page }) => {
 	await page.goto('/')
-	await page.waitForSelector('.dv-header', { timeout: 30_000 })
+	await page.waitForSelector('.tl-header', { timeout: 30_000 })
 	await page.addStyleTag({ content: CLASSIC_SCROLLBARS })
 })
 
@@ -31,7 +31,7 @@ for (const [w, h] of [
 		await page.setViewportSize({ width: w, height: h })
 		await page.waitForTimeout(400) // let the onresize effect refit + re-measure
 		const { scrollWidth, clientWidth } = await page
-			.locator('.dv-packed')
+			.locator('.tl-packed')
 			.evaluate((el) => ({ scrollWidth: el.scrollWidth, clientWidth: el.clientWidth }))
 		expect(scrollWidth, `grid content (${scrollWidth}px) spilled past the view (${clientWidth}px)`).toBeLessThanOrEqual(clientWidth + 1)
 	})

@@ -1,0 +1,241 @@
+//! The run loop: build the world from `(seed, size)`, then generate → apply → assert the oracle
+//! after every step. A run is fully reproducible from its `(seed, size)`, so `minimize` can re-run
+//! it freely.
+//!
+//! The world is a [`PackedState`], not a bare [`PackedGrid`]: a user cannot produce a `DropTarget`,
+//! only a cursor position, so fuzzing `PackedGrid::drop` directly would exercise an interface
+//! nobody drives. Everything the grid used to be poked with is still covered — through the gesture
+//! layer that actually produces it.
+
+use std::collections::HashMap;
+
+use tilers_core::{
+	Band, Config, Group, GroupId, PackedState, PanelId, Step,
+	model::packed::{DropTarget, MinSize, PackedGrid},
+};
+use v_utils::fuzz::Frng;
+
+use crate::{actions, oracle};
+
+/// Container widths the fuzzer measures at: both sides of every [`Breakpoint`] boundary, so band
+/// transitions are hit exactly rather than by luck, plus a uniform draw in between.
+pub const EDGES: [f64; 8] = [575.0, 576.0, 767.0, 768.0, 991.0, 992.0, 1199.0, 1200.0];
+pub const MIN_W: f64 = 320.0;
+pub const MAX_W: f64 = 1920.0;
+pub const MIN_H: f64 = 400.0;
+pub const MAX_H: f64 = 1200.0;
+
+/// The fuzzed world: the reducer under test, a monotonic panel-id source (the state mints its own
+/// group ids), the live container geometry, the last pointer position (what the inspect chord
+/// hit-tests against), and the two histories backing the round-trip invariants.
+pub struct World {
+	pub state: PackedState,
+	pub cfg: Config,
+	pub next_panel: u64,
+	/// What a binding's panel list declares: every minted panel's min, mirrored into the state.
+	pub mins: HashMap<PanelId, MinSize>,
+	pub origin: (f64, f64),
+	pub size: (f64, f64),
+	pub cursor: (f64, f64),
+	/// The [`Band`] the latch has already resolved — what `take_band` is asserted against.
+	pub band: Option<Band>,
+	/// Grid snapshots keyed by the container size they settled at, since the last *structural* edit.
+	/// A container resize is pure reflow, so returning to a previously-seen size must reproduce that
+	/// size's exact arrangement; any structural edit changes the layout for non-viewport reasons and
+	/// clears this baseline.
+	pub measure_log: Vec<((f64, f64), PackedGrid)>,
+	/// Every grid [`capture_undo`](PackedState::capture_undo) actually pushed. Undo/redo may only
+	/// ever land on one of these — checking membership rather than mirroring the cursor keeps this
+	/// from re-implementing the history it is testing.
+	pub undo_log: Vec<PackedGrid>,
+	/// The [`DropTarget`]s `resolve_target` returned during the most recent drag — what the coverage
+	/// tally reports, so it says which interactions were *reached*, not which were aimed for.
+	pub resolved: Vec<DropTarget>,
+}
+
+impl World {
+	/// A new panel in the host's list, declaring `min` — mirrored the way a binding does on every
+	/// panels change.
+	pub fn mint_panel(&mut self, min: MinSize) -> PanelId {
+		let id = PanelId(format!("p{}", self.next_panel));
+		self.next_panel += 1;
+		self.mins.insert(id.clone(), min);
+		self.state.set_mins(self.mins.clone());
+		id
+	}
+
+	/// `grid` as a fresh state at this world's geometry and mins settles it — the public path a
+	/// stored layout comes back through.
+	pub fn settled(&self, grid: &PackedGrid) -> Result<PackedGrid, String> {
+		let mut fresh = PackedState::new(self.cfg.clone());
+		fresh.set_mins(self.mins.clone());
+		fresh.set_measure(self.origin, self.size);
+		fresh.load(&tilers_core::model::serial::save(grid)).map_err(|e| format!("load of our own save failed: {e:?}"))?;
+		Ok(fresh.grid().clone())
+	}
+
+	/// Live px per grid step, the same `(width / cols, height / rows)` [`PackedState::set_measure`]
+	/// derives — the generator needs it to aim a pointer at a tile.
+	pub fn step_px(&self) -> (f64, f64) {
+		(self.size.0 / self.state.cols() as f64, self.size.1 / self.cfg.rows.max(1) as f64)
+	}
+
+	/// A container resize, through the real breakpoint path. Returns `Err` if a size seen since the
+	/// last structural edit fails to reproduce its arrangement — i.e. resizing away and back left a
+	/// lasting impact, which is invalid.
+	pub fn measure(&mut self, w: f64, h: f64) -> Result<(), String> {
+		self.size = (w, h);
+		self.state.set_measure(self.origin, self.size);
+		self.resolve_band()?;
+		match self.measure_log.iter().find(|(s, _)| *s == self.size) {
+			Some((_, prev)) if prev != self.state.grid() => Err(format!(
+				"measure round-trip changed the arrangement at {w}x{h} (cols={}): {:?} vs {:?}",
+				self.state.cols(),
+				self.state.grid().cells,
+				prev.cells
+			)),
+			Some(_) => Ok(()),
+			None => {
+				let settled = self.state.grid().clone();
+				self.measure_log.push((self.size, settled));
+				Ok(())
+			}
+		}
+	}
+
+	/// The band-resolution latch, driven exactly as a binding does — `take_band` after every
+	/// measure. It must fire once on entry into a band group and never again within it. Natively
+	/// [`persist`](tilers_core) reads nothing, so every fire is a miss: the framework has left
+	/// the grid reset and this stands in for the host's `on_band` re-seed. Which makes a band
+	/// crossing a structural edit, so the measure round-trip baseline goes with it.
+	fn resolve_band(&mut self) -> Result<(), String> {
+		let band = self.state.band();
+		match (self.band, self.state.take_band()) {
+			(Some(prev), None) if prev == band => Ok(()),
+			(prev, None) => Err(format!("band {prev:?} → {band} but the latch never fired")),
+			(Some(prev), Some(_)) if prev == band => Err(format!("the latch fired without leaving band {band}")),
+			(_, Some(restored)) => {
+				if restored {
+					return Err(format!("nothing is stored natively, so entering {band} can only report a miss"));
+				}
+				if !self.state.grid().cells.is_empty() {
+					return Err(format!("a missed band ({band}) must leave the grid reset for the host to seed: {:?}", self.state.grid().cells));
+				}
+				if self.state.take_band().is_some() {
+					return Err(format!("the latch re-armed without leaving band {band}"));
+				}
+				self.band = Some(band);
+				self.structural_edit();
+				self.seed_tiles();
+				Ok(())
+			}
+		}
+	}
+
+	/// The starting spread: a few packed tiles, one with a second tab. Placed through the real
+	/// `place`/`add_tab` path whenever the framework hands back a reset grid — what a host's
+	/// `on_band` does on a cache miss.
+	fn seed_tiles(&mut self) {
+		let (cols, rows) = (self.state.cols(), self.cfg.rows);
+		let min = MinSize::Steps { w: Step(1), h: Step(1) };
+		for (fw, fh) in [(0.25, 0.3), (0.3, 0.25), (0.2, 0.4), (0.35, 0.3)] {
+			let gid = self.state.mint_group_id();
+			let panel = self.mint_panel(min);
+			let (w, h) = (((cols as f64 * fw) as u32).max(1), ((rows as f64 * fh) as u32).max(1));
+			self.state.place(Group::new(gid, panel), w, h);
+		}
+		// give the first tile a second tab so tab-tears have something to bite on from the start.
+		let extra = self.mint_panel(min);
+		self.state.add_tab(GroupId(0), extra);
+	}
+
+	/// A non-viewport mutation: invalidate the measure round-trip baseline.
+	pub fn structural_edit(&mut self) {
+		self.measure_log.clear();
+	}
+
+	/// What a binding's undo effect does once the layout comes to rest, mirrored here so the history
+	/// under test is fed the same way in the fuzzer as in the app.
+	pub fn settle(&mut self) {
+		if self.state.wants_undo_snapshot() {
+			self.state.capture_undo();
+			self.undo_log.push(self.state.grid().clone());
+		}
+	}
+}
+
+/// An oracle violation. The reproducing trace is the `(seed, size)` itself — `replay` re-runs
+/// verbosely to print the steps — so we carry only what the report prints.
+pub struct Failure {
+	pub step: usize,
+	pub what: String,
+}
+
+/// `observe` sees the seeded world (with `None`), then every world that passed the oracle paired
+/// with the action that produced it — enough to replay a trace's geometry outside the test binary
+/// (see `examples/fuzz_film.rs`).
+pub fn run(seed: u64, size: usize, verbose: bool, observe: &mut dyn FnMut(Option<&actions::Action>, &World)) -> Result<(), Failure> {
+	let mut frng = Frng::new(seed, size);
+	// Swarm: per-run action weights come from the buffer head, not hand-tuned constants.
+	let mut weights = [0u32; actions::N_KINDS];
+	for w in &mut weights {
+		*w = frng.byte() as u32 % 8;
+	}
+
+	let mut world = seed_world(&mut frng);
+	if let Err(what) = oracle::check_settled(&world) {
+		return Err(Failure { step: 0, what });
+	}
+	observe(None, &world);
+
+	let mut step = 0;
+	while frng.remaining() > 0 {
+		let Some(action) = actions::generate(&mut frng, &world, &weights) else { break };
+		if verbose {
+			eprintln!("step {step} (cols={}, {}x{}): {action:?}", world.state.cols(), world.size.0, world.size.1);
+		}
+		if let Err(what) = actions::apply(&action, &mut world, &mut |w| observe(Some(&action), w)) {
+			return Err(Failure { step, what });
+		}
+		// A resize left mid-gesture is a legitimate resting place (the user is still holding the grip),
+		// and the packed invariant is only claimed once it settles.
+		let checked = if world.state.resizing() {
+			oracle::check_in_flight(&world.state)
+		} else {
+			world.settle();
+			oracle::check_settled(&world)
+		};
+		if let Err(what) = checked {
+			return Err(Failure { step, what });
+		}
+		observe(Some(&action), &world);
+		step += 1;
+	}
+	Ok(())
+}
+
+/// The seeded world: the first measure arms the band latch, whose miss the [`World::seed_tiles`]
+/// re-seed answers — the same path a band crossing mid-run takes, so a run starts exactly where a
+/// resize would leave it.
+fn seed_world(frng: &mut Frng) -> World {
+	let cfg = Config::default();
+	let mut world = World {
+		state: PackedState::new(cfg.clone()),
+		cfg,
+		next_panel: 0,
+		mins: HashMap::new(),
+		// A non-zero root origin, so a lost `- origin` in the pointer mapping can't pass unnoticed.
+		origin: (17.0, 23.0),
+		size: (0.0, 0.0),
+		cursor: (0.0, 0.0),
+		band: None,
+		measure_log: Vec::new(),
+		undo_log: Vec::new(),
+		resolved: Vec::new(),
+	};
+	// Seed-derived initial container size, so different runs start packed in different bands.
+	let (w, h) = (frng.span(MIN_W, MAX_W), frng.span(MIN_H, MAX_H));
+	world.measure(w, h).expect("the first measure has no baseline to contradict");
+	world.settle();
+	world
+}

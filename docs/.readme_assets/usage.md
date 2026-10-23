@@ -2,7 +2,7 @@ Hand `PackedArea` a `Signal` of `DockPanel`s (id + title + the content to render
 
 ```rust
 use dioxus::prelude::*;
-use dockviewers_dioxus::{Config, DockPanel, Group, MinSize, PackedApi, PackedArea, PanelId};
+use tilers_dioxus::{Config, DockPanel, Group, MinSize, PackedApi, PackedArea, PanelId};
 
 fn app() -> Element {
     let panels = use_signal(Vec::<DockPanel>::new);
@@ -33,7 +33,7 @@ fn app() -> Element {
 }
 ```
 
-Runnable demo: `dx serve --example insilico --package dockviewers_dioxus --platform web` — or open the [hosted demo](https://@@OWNER@@.github.io/dockviewers/), no local setup needed. The Leptos binding is the same component with `Arc<dyn Fn(PackedApi) + Send + Sync>` in place of `Callback` — see `examples/insilico_leptos`.
+Runnable demo: `dx serve --example insilico --package tilers_dioxus --platform web` — or open the [hosted demo](https://@@OWNER@@.github.io/tilers/), no local setup needed. The Leptos binding is the same component with `Arc<dyn Fn(PackedApi) + Send + Sync>` in place of `Callback` — see `examples/insilico_leptos`.
 
 **Props:** `panels` (order = stable overlay render order — don't reorder it, that remounts panels), `on_band` (see below), `config`.
 
@@ -65,4 +65,4 @@ api.cols(); api.band(); api.tab_ids();
 
 **Grid** — `Config::steps` (default 64) is the desktop column count, scaled down per band so the *physical* step stays ~constant and tiles reflow instead of shrinking; `rows` (default 36) is fixed.
 
-**Theming** — only structural CSS ships; set `--dv-*` custom properties on any ancestor for colors/sizes (`--dv-accent`, `--dv-fg`, `--dv-group-bg`, `--dv-tab-bg`, `--dv-tab-active-bg`, `--dv-tab-active-fg`, `--dv-tab-border`, `--dv-tabstrip-bg`, `--dv-resize-bg`, `--dv-shadow-bg`, `--dv-content-pad`).
+**Theming** — only structural CSS ships; set `--tl-*` custom properties on any ancestor for colors/sizes (`--tl-accent`, `--tl-fg`, `--tl-group-bg`, `--tl-tab-bg`, `--tl-tab-active-bg`, `--tl-tab-active-fg`, `--tl-tab-border`, `--tl-tabstrip-bg`, `--tl-resize-bg`, `--tl-shadow-bg`, `--tl-content-pad`).

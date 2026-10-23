@@ -1,0 +1,23 @@
+[package]
+name = "tilers_grafana"
+version = "0.1.0"
+edition = "2024"
+description = "Grafana app plugin rendering a dashboard through the tilers Leptos binding."
+license = "BlueOak-1.0.0"
+repository = "https://github.com/EV-Main/tilers"
+publish = false # ships as the plugin zip; `plugin/package.json` holds the release version
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+console_error_panic_hook.workspace = true
+js-sys.workspace = true
+leptos.workspace = true
+send_wrapper.workspace = true
+tilers_leptos = { workspace = true, features = ["csr"] }
+wasm-bindgen.workspace = true
+web-sys = { workspace = true, features = ["HtmlElement", "console"] }
+
+[lints]
+workspace = true

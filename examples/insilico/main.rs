@@ -1,6 +1,6 @@
 //! The packed-grid paradigm in action — InsilicoTerminal's tiled trading layout, the visual
 //! proof of [`PackedArea`]. **Web-only**: run with
-//! `dx serve --example insilico --package dockviewers_dioxus` (a native `cargo run` panics inside
+//! `dx serve --example insilico --package tilers_dioxus` (a native `cargo run` panics inside
 //! the dioxus-web renderer — it needs a wasm host).
 //!
 //! Every pane is a different projection of one shared [`market::Market`] sim the ticker advances:
@@ -25,8 +25,8 @@ mod watchlist;
 use std::rc::Rc;
 
 use dioxus::prelude::*;
-use dockviewers_dioxus::{Config, DockPanel, Group, GroupId, MinSize, PackedApi, PackedArea, PanelId, Saved, Step};
 use market::{Market, xorshift};
+use tilers_dioxus::{Config, DockPanel, Group, GroupId, MinSize, PackedApi, PackedArea, PanelId, Saved, Step};
 
 /// The catalog of insilico-style windows. Each declares its title, default size, and a per-type
 /// [`MinSize`] (in whichever unit reads naturally).
@@ -110,7 +110,7 @@ fn main() {
 	#[cfg(not(target_arch = "wasm32"))]
 	{
 		std::hint::black_box(app as fn() -> Element);
-		eprintln!("insilico is a web example — run it with:\n  dx serve --example insilico --package dockviewers_dioxus");
+		eprintln!("insilico is a web example — run it with:\n  dx serve --example insilico --package tilers_dioxus");
 	}
 }
 

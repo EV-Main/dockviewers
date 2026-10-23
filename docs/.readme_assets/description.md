@@ -1,8 +1,8 @@
-🌐 **[Live demo](https://@@OWNER@@.github.io/dockviewers/)** — no setup, runs in the browser.
+🌐 **[Live demo](https://@@OWNER@@.github.io/tilers/)** — no setup, runs in the browser.
 
 A tiling/docking layout for [Dioxus](https://dioxuslabs.com/) and [Leptos](https://leptos.dev/) — the IDE/trading-terminal kind: panes split, resize, tab together, float, and maximize, with the arrangement cached per screen size and restored on reload.
 
 ![fuzz trace, seed 172](docs/.readme_assets/assets/fuzz.svg)
 
-A random fuzz run (seed 172), not a demo. For the real thing, [play with it](https://@@OWNER@@.github.io/dockviewers/).
+A random fuzz run (seed 172), not a demo. For the real thing, [play with it](https://@@OWNER@@.github.io/tilers/).
 // generate it yourself: `nix run .#film`.

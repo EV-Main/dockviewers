@@ -11,13 +11,13 @@ const KEY = 'insilico-layout'
  * — and stays that way across a `reload`, which an init-script wipe would not. */
 const boot = async (page) => {
 	await page.goto('/')
-	await page.waitForSelector('.dv-header', { timeout: 30_000 })
+	await page.waitForSelector('.tl-header', { timeout: 30_000 })
 }
 
 const cache = (page, band) => page.evaluate((k) => localStorage.getItem(k), `${KEY}-${band}`)
 const keys = (page) => page.evaluate(() => Object.keys(localStorage).sort())
 /** Tile geometry, in the skeleton's own order — the layout's observable signature. */
-const geometry = (page) => page.$$eval('.dv-tile', (els) => els.map((e) => e.getAttribute('style')))
+const geometry = (page) => page.$$eval('.tl-tile', (els) => els.map((e) => e.getAttribute('style')))
 
 test.beforeEach(async ({ page }) => await boot(page))
 
@@ -31,7 +31,7 @@ test('Alt+S caches the current band under its own key', async ({ page }) => {
 
 test('a cached layout survives a reload', async ({ page }) => {
 	// Grow the first tile so the restored layout is distinguishable from a fresh seed.
-	const grip = page.locator('.dv-tile .dv-resize-handle').first()
+	const grip = page.locator('.tl-tile .tl-resize-handle').first()
 	const box = await grip.boundingBox()
 	await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
 	await page.mouse.down()
@@ -41,7 +41,7 @@ test('a cached layout survives a reload', async ({ page }) => {
 	const edited = await geometry(page)
 	await page.keyboard.press('Alt+s')
 	await page.reload()
-	await page.waitForSelector('.dv-header', { timeout: 30_000 })
+	await page.waitForSelector('.tl-header', { timeout: 30_000 })
 	expect(await geometry(page), 'the restored layout must match what was cached').toEqual(edited)
 })
 
@@ -52,7 +52,7 @@ test('each band caches under its own key', async ({ page }) => {
 
 	await page.setViewportSize({ width: 700, height: 800 })
 	// The band change re-seeds; wait for the dock to settle into the narrow arrangement.
-	await page.waitForFunction(() => document.querySelectorAll('.dv-tile').length > 0)
+	await page.waitForFunction(() => document.querySelectorAll('.tl-tile').length > 0)
 	await page.keyboard.press('Alt+s')
 
 	expect(await cache(page, 'sm'), 'the narrow band writes the sm entry').not.toBe(null)

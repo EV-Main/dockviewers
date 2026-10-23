@@ -1,5 +1,6 @@
-use dioxus::prelude::*;
 use std::collections::BTreeSet;
+
+use dioxus::prelude::*;
 
 use crate::market::Market;
 

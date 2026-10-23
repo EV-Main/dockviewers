@@ -1,19 +1,19 @@
-# dockviewers
+# tilers
 ![Minimum Supported Rust Version](https://img.shields.io/badge/nightly-1.92+-ab6000.svg)
-[<img alt="crates.io" src="https://img.shields.io/crates/v/dockviewers.svg?color=fc8d62&logo=rust" height="20" style=flat-square>](https://crates.io/crates/dockviewers)
-[<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs&style=flat-square" height="20">](https://docs.rs/dockviewers)
-![Lines Of Code](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/valeratrades/b48e6f02c61942200e7d1e3eeabf9bcb/raw/dockviewers-loc.json)
+[<img alt="crates.io" src="https://img.shields.io/crates/v/tilers.svg?color=fc8d62&logo=rust" height="20" style=flat-square>](https://crates.io/crates/tilers)
+[<img alt="docs.rs" src="https://img.shields.io/badge/docs.rs-66c2a5?style=for-the-badge&labelColor=555555&logo=docs.rs&style=flat-square" height="20">](https://docs.rs/tilers)
+![Lines Of Code](https://img.shields.io/endpoint?url=https://gist.githubusercontent.com/valeratrades/b48e6f02c61942200e7d1e3eeabf9bcb/raw/tilers-loc.json)
 <br>
 [<img alt="ci errors" src="https://img.shields.io/github/actions/workflow/status/EV-Main/dockviewers/errors.yml?branch=main&style=for-the-badge&style=flat-square&label=errors&labelColor=420d09" height="20">](https://github.com/EV-Main/dockviewers/actions?query=branch%3Amain) <!--NB: Won't find it if repo is private-->
 [<img alt="ci warnings" src="https://img.shields.io/github/actions/workflow/status/EV-Main/dockviewers/warnings.yml?branch=main&style=for-the-badge&style=flat-square&label=warnings&labelColor=d16002" height="20">](https://github.com/EV-Main/dockviewers/actions?query=branch%3Amain) <!--NB: Won't find it if repo is private-->
 
-🌐 **[Live demo](https://EV-Main.github.io/dockviewers/)** — no setup, runs in the browser.
+🌐 **[Live demo](https://EV-Main.github.io/tilers/)** — no setup, runs in the browser.
 
 A tiling/docking layout for [Dioxus](https://dioxuslabs.com/) and [Leptos](https://leptos.dev/) — the IDE/trading-terminal kind: panes split, resize, tab together, float, and maximize, with the arrangement cached per screen size and restored on reload.
 
 ![fuzz trace, seed 172](docs/.readme_assets/assets/fuzz.svg)
 
-A random fuzz run (seed 172), not a demo. For the real thing, [play with it](https://EV-Main.github.io/dockviewers/).
+A random fuzz run (seed 172), not a demo. For the real thing, [play with it](https://EV-Main.github.io/tilers/).
 // generate it yourself: `nix run .#film`.
 
 ## Usage
@@ -21,7 +21,7 @@ Hand `PackedArea` a `Signal` of `DockPanel`s (id + title + the content to render
 
 ```rust
 use dioxus::prelude::*;
-use dockviewers_dioxus::{Config, DockPanel, Group, MinSize, PackedApi, PackedArea, PanelId};
+use tilers_dioxus::{Config, DockPanel, Group, MinSize, PackedApi, PackedArea, PanelId};
 
 fn app() -> Element {
     let panels = use_signal(Vec::<DockPanel>::new);
@@ -52,7 +52,7 @@ fn app() -> Element {
 }
 ```
 
-Runnable demo: `dx serve --example insilico --package dockviewers_dioxus --platform web` — or open the [hosted demo](https://EV-Main.github.io/dockviewers/), no local setup needed. The Leptos binding is the same component with `Arc<dyn Fn(PackedApi) + Send + Sync>` in place of `Callback` — see `examples/insilico_leptos`.
+Runnable demo: `dx serve --example insilico --package tilers_dioxus --platform web` — or open the [hosted demo](https://EV-Main.github.io/tilers/), no local setup needed. The Leptos binding is the same component with `Arc<dyn Fn(PackedApi) + Send + Sync>` in place of `Callback` — see `examples/insilico_leptos`.
 
 **Props:** `panels` (order = stable overlay render order — don't reorder it, that remounts panels), `on_band` (see below), `config`.
 
@@ -84,7 +84,7 @@ api.cols(); api.band(); api.tab_ids();
 
 **Grid** — `Config::steps` (default 64) is the desktop column count, scaled down per band so the *physical* step stays ~constant and tiles reflow instead of shrinking; `rows` (default 36) is fixed.
 
-**Theming** — only structural CSS ships; set `--dv-*` custom properties on any ancestor for colors/sizes (`--dv-accent`, `--dv-fg`, `--dv-group-bg`, `--dv-tab-bg`, `--dv-tab-active-bg`, `--dv-tab-active-fg`, `--dv-tab-border`, `--dv-tabstrip-bg`, `--dv-resize-bg`, `--dv-shadow-bg`, `--dv-content-pad`).
+**Theming** — only structural CSS ships; set `--tl-*` custom properties on any ancestor for colors/sizes (`--tl-accent`, `--tl-fg`, `--tl-group-bg`, `--tl-tab-bg`, `--tl-tab-active-bg`, `--tl-tab-active-fg`, `--tl-tab-border`, `--tl-tabstrip-bg`, `--tl-resize-bg`, `--tl-shadow-bg`, `--tl-content-pad`).
 
 
 

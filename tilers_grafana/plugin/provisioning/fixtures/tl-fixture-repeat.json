@@ -1,0 +1,93 @@
+{
+ "schemaVersion": 39,
+ "editable": true,
+ "timezone": "utc",
+ "refresh": "30s",
+ "graphTooltip": 1,
+ "time": {
+  "from": "now-6h",
+  "to": "now"
+ },
+ "tags": [
+  "ev"
+ ],
+ "links": [
+  {
+   "asDropdown": true,
+   "icon": "external link",
+   "includeVars": false,
+   "keepTime": true,
+   "tags": [
+    "ev"
+   ],
+   "targetBlank": false,
+   "title": "EV",
+   "tooltip": "",
+   "type": "dashboards",
+   "url": ""
+  }
+ ],
+ "templating": {
+  "list": [
+   {
+    "type": "query",
+    "name": "namespace",
+    "label": "namespace",
+    "datasource": {
+     "type": "grafana-testdata-datasource",
+     "uid": "testdata"
+    },
+    "query": "*",
+    "definition": "*",
+    "refresh": 2,
+    "sort": 1,
+    "hide": 0
+   },
+   {
+    "type": "query",
+    "name": "deployment",
+    "label": "deployment",
+    "datasource": {
+     "type": "grafana-testdata-datasource",
+     "uid": "testdata"
+    },
+    "query": "$namespace.*",
+    "definition": "$namespace.*",
+    "refresh": 2,
+    "sort": 1,
+    "hide": 0
+   }
+  ]
+ },
+ "uid": "tl-fixture-repeat",
+ "title": "Dock fixture \u203a Repeat",
+ "panels": [
+  {
+   "id": 1,
+   "type": "timeseries",
+   "title": "Memory \u00b7 $deployment",
+   "gridPos": {
+    "x": 0,
+    "y": 11,
+    "w": 8,
+    "h": 8
+   },
+   "datasource": {
+    "type": "grafana-testdata-datasource",
+    "uid": "testdata"
+   },
+   "targets": [
+    {
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "testdata"
+     },
+     "refId": "A",
+     "scenarioId": "random_walk",
+     "alias": "q-11"
+    }
+   ],
+   "repeat": "namespace"
+  }
+ ]
+}

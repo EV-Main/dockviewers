@@ -1,0 +1,35 @@
+[package]
+name = "tilers_core"
+version = "0.3.0"
+edition = "2024"
+description = "Framework-agnostic engine for the tilers packed-grid tiling layout: the grid model, the gesture reducer, the seed cache, and CSS — no UI framework."
+license = "BlueOak-1.0.0"
+repository = "https://github.com/EV-Main/tilers"
+documentation = "https://docs.rs/tilers_core"
+readme = "../README.md"
+keywords = ["layout", "docking", "tiling", "wasm", "grid"]
+categories = ["gui", "wasm"]
+
+[lib]
+
+# Touching `window`/DOM is web-only; gated so native `cargo check`/`cargo test` stay green.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+wasm-bindgen = "0.2"
+web-sys = { version = "0.3", features = ["Window", "Storage", "Document", "Element", "DomRect", "Node", "NodeList", "CssStyleDeclaration", "console"] }
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+# Only `examples/fuzz_film.rs` needs an arg parser; `env` lets each flag fall back to a `FILM_*`
+# variable without a second code path.
+[dev-dependencies]
+clap = { workspace = true, features = ["env"] }
+v_utils = { workspace = true, features = ["fuzz"] }
+
+[[test]]
+name = "integration"
+path = "tests/integration/main.rs"
+
+[lints]
+workspace = true

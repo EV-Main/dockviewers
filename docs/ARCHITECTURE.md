@@ -2,7 +2,7 @@
 
 A packed-grid tiling layout: tiles have a fixed starting size, snap to a step grid,
 never overlap, and leave whitespace below (InsilicoTerminal's look). One engine
-(`dockviewers_core`) drives two bindings (`dockviewers_dioxus`, `dockviewers_leptos`).
+(`tilers_core`) drives two bindings (`tilers_dioxus`, `tilers_leptos`).
 
 ## The one idea
 
@@ -33,7 +33,7 @@ flowchart LR
 
 ## Codemap
 
-`dockviewers_core`:
+`tilers_core`:
 - `model/packed` — the grid itself: `Cell` rects in step units, the skyline `pack`,
   `settle` (gravity toward the top, with the pinned tile claiming its row first),
   `resolve_target`/`drop`, `refit` for a column-count change. The no-overlap invariant
@@ -48,13 +48,13 @@ flowchart LR
   `Breakpoint` (5 widths, sets the column count) and `Band` (3 widths, the persistence
   key), `Saved`.
 - `persist` — `localStorage` read/write, wasm-only (a native no-op), crate-internal.
-- `css` — the one structural stylesheet; colors and sizes are `--dv-*` custom properties.
+- `css` — the one structural stylesheet; colors and sizes are `--tl-*` custom properties.
 
-Bindings (`dockviewers_dioxus`, `dockviewers_leptos`) hold `PackedState` in one reactive
+Bindings (`tilers_dioxus`, `tilers_leptos`) hold `PackedState` in one reactive
 cell, forward DOM events into it, render the view-model, and expose `PackedApi` — a cheap
 handle over that cell — to the host through `on_band`.
 
-`dockviewers_grafana` is a *host* of the Leptos binding, not a third binding: a Grafana app
+`tilers_grafana` is a *host* of the Leptos binding, not a third binding: a Grafana app
 plugin (`plugin/`, TS + `@grafana/scenes`) whose wasm half mounts `PackedArea` with one bare slot
 per panel, and the plugin portals each panel's native `VizPanel` into its slot. Everything
 Grafana-shaped — the save-model conversion, the `gridPos` seed, keybinds clear of Grafana's —
