@@ -92,7 +92,7 @@ impl PackedApi {
 }
 
 /// Root of the packed layout. Owns the thread-local `RwSignal<PackedState>`, installs the window
-/// keydown/pointer listeners, measures its own box, and stacks the tile skeleton over the content
+/// keydown/blur listeners, measures its own box, and stacks the tile skeleton over the content
 /// overlay.
 ///
 /// - `panels` is a signal so windows spawned at runtime appear in the overlay.
@@ -157,35 +157,37 @@ pub fn PackedArea(
 		}
 	});
 
-	// App-level keybinds: a window keydown listener plus a sibling pointermove tracking the raw
-	// cursor for the `d` hit-test. `on_key` is web-only (it logs to the console), so gate the block.
+	// App-level keybinds on `window`, in the capture phase: a descendant (Google Maps, Plotly, …) that
+	// `stopPropagation`s a keydown would otherwise silence them. `window_event_listener` is bubble-only.
 	#[cfg(target_arch = "wasm32")]
 	{
-		use std::{cell::Cell, rc::Rc};
-
-		use wasm_bindgen::JsCast;
-		let cursor = Rc::new(Cell::new((0.0_f64, 0.0_f64)));
-		let track = cursor.clone();
-		let pointermove = window_event_listener(leptos::ev::pointermove, move |e| track.set((e.client_x() as f64, e.client_y() as f64)));
-		let keydown = window_event_listener(leptos::ev::keydown, move |e| {
-			// Don't hijack typing: ignore keys aimed at an editable field.
-			if let Some(el) = e.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) {
-				if matches!(el.tag_name().as_str(), "INPUT" | "TEXTAREA" | "SELECT") || el.dyn_ref::<web_sys::HtmlElement>().is_some_and(web_sys::HtmlElement::is_content_editable) {
-					return;
-				}
-			}
-			let Some(el) = root.get_untracked() else {
-				return; // no layout to act on before the root mounts
-			};
-			let (cx, cy) = cursor.get();
-			let out = state.try_update(|s| s.on_key(&e.key(), e.alt_key(), e.ctrl_key(), (cx, cy), el.scroll_top() as f64));
-			if out.expect("listener removed with the state's owner").prevent_default {
+		use wasm_bindgen::{JsCast, closure::Closure};
+		let keydown = Closure::<dyn Fn(web_sys::KeyboardEvent)>::new(move |e: web_sys::KeyboardEvent| {
+			// Every keystroke typed into any page input lands here; only a change may re-render.
+			let out = state
+				.try_maybe_update(|s| {
+					let o = s.on_key((&e).into());
+					(o.changed, o)
+				})
+				.expect("listener removed with the state's owner");
+			if out.prevent_default {
 				e.prevent_default();
 			}
 		});
+		let blur = Closure::<dyn Fn()>::new(move || state.update(|s| s.cancel_chord()));
+		let window = web_sys::window().expect("a browser window");
+		window
+			.add_event_listener_with_callback_and_bool("keydown", keydown.as_ref().unchecked_ref(), true)
+			.expect("add keydown listener");
+		window.add_event_listener_with_callback("blur", blur.as_ref().unchecked_ref()).expect("add blur listener");
+		let held = send_wrapper::SendWrapper::new((keydown, blur));
 		on_cleanup(move || {
-			pointermove.remove();
-			keydown.remove();
+			let (keydown, blur) = held.take();
+			let window = web_sys::window().expect("a browser window");
+			window
+				.remove_event_listener_with_callback_and_bool("keydown", keydown.as_ref().unchecked_ref(), true)
+				.expect("remove keydown listener");
+			window.remove_event_listener_with_callback("blur", blur.as_ref().unchecked_ref()).expect("remove blur listener");
 		});
 	}
 
@@ -316,19 +318,46 @@ pub fn PackedArea(
 					})
 			}}
 
-			// `?` keybind hint.
+			// Which-key popup for a pending chord. `.tl-hint` delays its own reveal in CSS.
 			{move || {
 				state
-					.with(|s| s.help_open())
-					.then(|| {
-						let rows = state.with(|s| s.help_rows());
+					.with(|s| s.hint())
+					.map(|h| {
+						view! {
+							<div class="tl-hint">
+								<div class="tl-hint-prefix">{h.prefix}</div>
+								{h
+									.rows
+									.into_iter()
+									.map(|r| {
+										view! {
+											<div class="tl-hint-row">
+												<span class="tl-help-key">{r.chord}</span>
+												<span>{r.label}{r.scope.then_some(" …")}</span>
+											</div>
+										}
+									})
+									.collect_view()}
+							</div>
+						}
+					})
+			}}
+
+			// The full keymap.
+			{move || {
+				let titles = panel_titles(panels);
+				state
+					.with(|s| s.help(&titles))
+					.map(|help| {
 						view! {
 							<div class="tl-help-scrim" on:click=move |_| state.update(|s| s.close_help())>
 								<div class="tl-help">
 									<div class="tl-help-title">"Keybinds"</div>
-									{rows
+									{help.pane.map(|p| view! { <div class="tl-help-pane">{p}</div> })}
+									{help
+										.rows
 										.into_iter()
-										.map(|(label, chord)| {
+										.map(|(chord, label)| {
 											view! {
 												<div class="tl-help-row">
 													<span class="tl-help-label">{label}</span>
@@ -419,6 +448,14 @@ fn render_frame(frame: tilers_core::Frame, state: RwSignal<PackedState, LocalSto
 				>
 					{tabs}
 					<div class="tl-actions">
+						<button
+							class="tl-action"
+							title="Keybinds"
+							on:pointerdown=move |e: web_sys::PointerEvent| e.stop_propagation()
+							on:click=move |_| state.update(|s| s.open_help(gid))
+						>
+							"?"
+						</button>
 						<button
 							class="tl-action"
 							title="Add window as a tab"

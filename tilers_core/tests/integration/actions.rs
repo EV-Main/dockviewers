@@ -12,8 +12,9 @@
 use std::collections::HashMap;
 
 use tilers_core::{
-	Group, GroupId, Keybind, PanelId, Step,
-	model::packed::{DragSource, DropTarget, MinSize},
+	Group, GroupId, PackedState, PanelId, Step,
+	keys::{Binding, Builtin, Chord, Command, Help, Hint, KeyInput, Keymap, Node},
+	model::packed::{DragSource, DropTarget, MinSize, PackedGrid},
 };
 use v_utils::fuzz::Frng;
 
@@ -24,8 +25,6 @@ use crate::{
 
 /// Action kinds, in the order their swarm weights are drawn.
 pub const N_KINDS: usize = 9;
-/// Every chord, so the generator can't silently drop one as the set grows.
-pub const KEY_KINDS: [KeyKind; 7] = [KeyKind::Close, KeyKind::Maximize, KeyKind::Undo, KeyKind::Redo, KeyKind::Help, KeyKind::Escape, KeyKind::Inspect];
 /// Height of the tile chrome: `Config::title_h_rem`'s default resolved against the 16px root font a
 /// non-DOM target assumes. Mirrored here only to aim at headers and to re-run the pure
 /// `resolve_target` for the coverage tally.
@@ -74,7 +73,8 @@ pub enum Action {
 		path: Vec<(f64, f64)>,
 		commit: bool,
 	},
-	Key(KeyKind),
+	/// A keystroke sequence reaching `aim`, unless [`noisy`] inputs mixed into it stop it short.
+	Key { inputs: Vec<KeyInput>, aim: Aim },
 	/// `save()` → a fresh state measured the same → `load()` → must reproduce the layout.
 	SaveLoad,
 	/// A host re-declaring a panel's min in its panel list. The floor is unbounded by the tile's
@@ -93,14 +93,48 @@ pub enum Grab {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub enum KeyKind {
-	Close,
-	Maximize,
-	Undo,
-	Redo,
-	Help,
+pub enum Aim {
+	Builtin(Builtin),
 	Escape,
-	Inspect,
+}
+
+/// Every leaf of the default keymap as the chords reaching it, so a new bind is fuzzed without
+/// anyone remembering to list it. Platform `other`: natively that is what the state resolves.
+fn sequences() -> Vec<(Vec<Chord>, Builtin)> {
+	fn walk(bs: &[Binding], prefix: &[Chord], out: &mut Vec<(Vec<Chord>, Builtin)>) {
+		for b in bs {
+			let seq = [prefix, &[b.on.other]].concat();
+			match &b.node {
+				Node::Run(Command::Builtin(x)) => out.push((seq, *x)),
+				Node::Scope { children, .. } => walk(children, &seq, out),
+				_ => unreachable!("the default keymap holds only builtins and scopes"),
+			}
+		}
+	}
+	let k = Keymap::default();
+	let mut out = Vec::new();
+	walk(&k.root, &[], &mut out);
+	walk(&k.scope, &[k.leader.other], &mut out);
+	out
+}
+
+/// An unbound key or an editable target: either cancels whatever the sequence had opened.
+pub fn noisy(inputs: &[KeyInput]) -> bool {
+	inputs.iter().any(|k| k.editable || k.key == "j")
+}
+
+/// The keydown a browser reports for `c` on a US layout.
+fn input(c: Chord) -> KeyInput {
+	let letter = c.key.len() == 1 && c.key.chars().all(|ch| ch.is_ascii_alphabetic());
+	KeyInput {
+		key: c.key.to_string(),
+		code: if letter { format!("Key{}", c.key.to_ascii_uppercase()) } else { c.key.to_string() },
+		ctrl: c.ctrl,
+		alt: c.alt,
+		meta: c.meta,
+		shift: letter && c.key.chars().all(|ch| ch.is_ascii_uppercase()),
+		editable: false,
+	}
 }
 
 /// Apply `action`, returning the invariant it violated. Several invariants are only expressible
@@ -136,7 +170,7 @@ pub fn apply(action: &Action, world: &mut World, mid: &mut dyn FnMut(&World)) ->
 				world.state.resize_end();
 			}
 		}
-		Action::Key(k) => return key(*k, world),
+		Action::Key { inputs, aim } => return key(inputs, *aim, world),
 		Action::SaveLoad => return save_load(world),
 		Action::SetMins { panel, min } => {
 			world.structural_edit();
@@ -242,7 +276,41 @@ pub fn generate(frng: &mut Frng, world: &World, weights: &[u32; N_KINDS]) -> Opt
 				commit: world.state.resizing() || frng.below(4) != 0,
 			}
 		}
-		KEY => Action::Key(KEY_KINDS[frng.below(KEY_KINDS.len() as u32) as usize]),
+		KEY => {
+			let seqs = sequences();
+			let (mut inputs, aim) = match seqs.get(frng.below(seqs.len() as u32 + 1) as usize) {
+				Some((chords, b)) => (chords.iter().map(|c| input(*c)).collect::<Vec<_>>(), Aim::Builtin(*b)),
+				None => (vec![input(Chord { key: "Escape", .. })], Aim::Escape),
+			};
+			// Each draws once per sequence, so most sequences stay clean and actually reach their aim.
+			if frng.below(4) == 0 {
+				let i = frng.below(inputs.len() as u32 + 1) as usize;
+				inputs.insert(
+					i,
+					KeyInput {
+						code: "ShiftLeft".into(),
+						shift: true,
+						..input(Chord { key: "Shift", .. })
+					},
+				);
+			}
+			if frng.below(6) == 0 {
+				let i = frng.below(inputs.len() as u32) as usize;
+				inputs[i] = input(Chord { key: "j", .. });
+			}
+			if frng.below(6) == 0 {
+				let i = frng.below(inputs.len() as u32) as usize;
+				inputs[i].editable = true;
+			}
+			// A Cyrillic layout: the same physical key produces a non-Latin `key`.
+			if frng.below(6) == 0 {
+				let i = frng.below(inputs.len() as u32) as usize;
+				if inputs[i].code.starts_with("Key") {
+					inputs[i].key = "ж".into();
+				}
+			}
+			Action::Key { inputs, aim }
+		}
 		SAVE_LOAD => Action::SaveLoad,
 		SET_MINS => {
 			let c = &cells[frng.below(cells.len() as u32) as usize];
@@ -362,31 +430,55 @@ fn grab_offset(grab: &Grab) -> (f64, f64) {
 	}
 }
 
-/// One keystroke, plus the bounds on what each chord is allowed to touch.
-fn key(k: KeyKind, world: &mut World) -> Result<(), String> {
-	let kb = world.cfg.keybinds;
-	let bind = match k {
-		KeyKind::Close => kb.close,
-		KeyKind::Maximize => kb.maximize,
-		KeyKind::Undo => kb.undo,
-		KeyKind::Redo => kb.redo,
-		KeyKind::Help => kb.help,
-		KeyKind::Escape => Keybind {
-			key: "Escape",
-			alt: false,
-			ctrl: false,
-		},
-		KeyKind::Inspect => Keybind { key: "d", alt: false, ctrl: false },
-	};
+/// Everything a binding renders that the keyboard can reach.
+#[derive(PartialEq)]
+struct Seen {
+	grid: PackedGrid,
+	hint: Option<Hint>,
+	help: Option<Help>,
+	inspect: Vec<(String, String)>,
+	frames: Vec<String>,
+}
+
+fn seen(s: &PackedState) -> Seen {
+	let titles = HashMap::new();
+	Seen {
+		grid: s.grid().clone(),
+		hint: s.hint(),
+		help: s.help(&titles),
+		inspect: s.inspect(),
+		frames: s.frames(&titles).into_iter().map(|f| f.style).collect(),
+	}
+}
+
+/// One keystroke sequence, plus the bounds on what its aim is allowed to touch. Noise only ever
+/// stops a sequence short, so each bound holds whether or not the aim was reached.
+fn key(inputs: &[KeyInput], aim: Aim, world: &mut World) -> Result<(), String> {
 	let before = world.state.grid().clone();
-	world.state.on_key(bind.key, bind.alt, bind.ctrl, world.cursor, 0.0);
-	match k {
-		// Maximize, the hint and the inspect popups are pure view state: they may never touch the model.
-		KeyKind::Maximize | KeyKind::Help | KeyKind::Escape | KeyKind::Inspect =>
+	let help_was = world.state.help(&HashMap::new()).is_some();
+	for k in inputs {
+		let was = seen(&world.state);
+		let out = world.state.on_key(k.clone());
+		let now = seen(&world.state);
+		// Only the pending chord (the hint) may move: text undo and typing stay the browser's.
+		if k.editable && (out.prevent_default || now.grid != was.grid || now.help != was.help || now.inspect != was.inspect || now.frames != was.frames) {
+			return Err(format!("{k:?} aimed at an editable acted: {out:?}"));
+		}
+		// A binding re-renders only on `changed`, so anything else that moved is a stale screen.
+		if !out.changed && now != was {
+			return Err(format!("{k:?} changed what renders but reported `changed: false`"));
+		}
+	}
+	// Help always acts, so it is the one aim whose arrival is observable: a clean sequence must get there.
+	if matches!(aim, Aim::Builtin(Builtin::Help)) && !noisy(inputs) && world.state.help(&HashMap::new()).is_some() == help_was {
+		return Err(format!("{inputs:?} never reached Help"));
+	}
+	match aim {
+		Aim::Escape | Aim::Builtin(Builtin::Maximize | Builtin::Help | Builtin::Inspect | Builtin::Cache | Builtin::Publish) =>
 			if world.state.grid() != &before {
-				return Err(format!("{k:?} is view-only but changed the layout: {:?} vs {:?}", world.state.grid().cells, before.cells));
+				return Err(format!("{aim:?} is view-only but changed the layout: {:?} vs {:?}", world.state.grid().cells, before.cells));
 			},
-		KeyKind::Undo | KeyKind::Redo => {
+		Aim::Builtin(Builtin::Undo | Builtin::Redo) => {
 			world.structural_edit();
 			// A restored snapshot is settled into the live geometry first, so the match is against each
 			// capture as it would land here — not against the raw capture.
@@ -395,10 +487,16 @@ fn key(k: KeyKind, world: &mut World) -> Result<(), String> {
 				landed |= &world.settled(g)? == world.state.grid();
 			}
 			if world.state.grid() != &before && !landed {
-				return Err(format!("{k:?} produced a layout that was never captured: {:?}", world.state.grid().cells));
+				return Err(format!("{aim:?} produced a layout that was never captured: {:?}", world.state.grid().cells));
 			}
 		}
-		KeyKind::Close => world.structural_edit(),
+		Aim::Builtin(_) => world.structural_edit(),
+	}
+	// A key mid-resize must leave the gesture addressing live cells.
+	if world.state.resizing() {
+		world.cursor.0 += 7.0;
+		world.state.resize_move(world.cursor);
+		oracle::check_in_flight(&world.state)?;
 	}
 	Ok(())
 }

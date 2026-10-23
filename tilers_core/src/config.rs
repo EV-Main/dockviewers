@@ -1,66 +1,23 @@
-//! Host-supplied configuration for the packed layout. Keybinds plus host-registered chords;
-//! passed once into [`PackedState`]. Binds match the **produced
-//! character** (`KeyboardEvent.key()`), so they follow the user's keyboard layout instead of a
-//! hardcoded QWERTY physical position.
+//! Host-supplied configuration for the packed layout, passed once into
+//! [`PackedState`](crate::PackedState).
 
 use std::rc::Rc;
 
-use crate::state::PackedState;
+use crate::keys::Keymap;
 
-/// A single chord: the character the key produces, plus the non-shift modifiers held. Shift is
-/// already baked into `key` (`"u"` vs `"U"`), so it isn't a separate flag.
-#[derive(Clone, Copy, PartialEq)]
-pub struct Keybind {
-	/// Matched verbatim against `KeyboardEvent.key()` — e.g. `"u"`, `"U"`, `"Delete"`, `"f"`.
-	pub key: &'static str,
-	pub alt: bool,
-	pub ctrl: bool,
-}
-
-impl Keybind {
-	pub(crate) fn matches(&self, key: &str, alt: bool, ctrl: bool) -> bool {
-		self.key == key && self.alt == alt && self.ctrl == ctrl
-	}
-}
-
-/// Chords acting on the layout / the focused pane. Defaults: `u` / `U` for the undo tree,
-/// `Backspace` to close the focused pane, `f` to toggle maximize on it, `?` for the keybind hint.
-/// They never fire while an editable field is focused (see the binding's listener), so bare letters
-/// don't hijack typing.
-#[derive(Clone, Copy, Default, PartialEq)]
-pub struct Keybinds {
-	pub undo: Keybind = Keybind { key: "u", alt: false, ctrl: false },
-	pub redo: Keybind = Keybind { key: "U", alt: false, ctrl: false },
-	pub close: Keybind = Keybind { key: "Backspace", alt: false, ctrl: false },
-	pub maximize: Keybind = Keybind { key: "f", alt: false, ctrl: false },
-	pub help: Keybind = Keybind { key: "?", alt: false, ctrl: false },
-	/// Cache this band's layout in `localStorage`, so this browser starts from it.
-	pub save: Keybind = Keybind { key: "s", alt: true, ctrl: false },
-	/// Hand this band's layout to the host, to become the default *other* clients start from.
-	pub publish: Keybind = Keybind { key: "S", alt: true, ctrl: false },
-}
-
-/// A host-registered chord's action: arbitrary code over the live layout. Framework-agnostic —
-/// the binding invokes it against its reactive cell's [`PackedState`]. `Rc` (not `Box`) so
-/// [`Config`] stays `Clone` for a binding that hands it around by prop.
-pub type Action = Rc<dyn Fn(&mut PackedState)>;
-
-/// What a save chord produced, handed to [`Config::on_save`].
+/// What a save command produced, handed to [`Config::on_save`].
 pub enum Saved {
-	/// [`Keybinds::save`] — already written to `localStorage` under `band`'s key. Feedback only.
+	/// [`Builtin::Cache`](crate::keys::Builtin::Cache): already written to `localStorage` under
+	/// `band`'s key. Feedback only.
 	Cached { band: Band },
-	/// [`Keybinds::publish`] — the framework does nothing with this; the host persists `json`
-	/// wherever it wants, to become the default fresh clients start from.
+	/// [`Builtin::Publish`](crate::keys::Builtin::Publish): the framework does nothing with this; the
+	/// host persists `json` wherever it wants, to become the default fresh clients start from.
 	Published { band: Band, json: String },
 }
 
 #[derive(Clone, Default)]
 pub struct Config {
-	pub keybinds: Keybinds,
-	/// Host-registered chords, each running arbitrary code over the live layout. Built-ins win on
-	/// collision (the listener tries them first); the action mutates the same [`PackedState`] the
-	/// host script drives, so it can `save()` the current layout. A bare `Vec` is the whole API.
-	pub actions: Vec<(Keybind, Action)>,
+	pub keymap: Keymap,
 	/// Desktop (`Xl`) column count: how many grid steps span the container's width on a wide screen.
 	/// Smaller [`Breakpoint`]s scale this down so the *physical* step stays ~constant and tiles reflow
 	/// instead of shrinking (see `Breakpoint::scale_cols`). The rendered horizontal step is
@@ -75,8 +32,8 @@ pub struct Config {
 	/// `localStorage` namespace for the built-in seed cache; the [`Band`] is appended. `None` ⇒ no
 	/// client cache at all, and every band entry reports a miss for the host to seed.
 	pub storage_key: Option<String> = None,
-	/// Fires after a save chord. `None` ⇒ [`publish`](Keybinds::publish) is unbound, since the
-	/// framework has nowhere to put a published layout on its own.
+	/// Fires after a save command. `None` ⇒ [`Publish`](crate::keys::Builtin::Publish) is unbound,
+	/// since the framework has nowhere to put a published layout on its own.
 	pub on_save: Option<Rc<dyn Fn(Saved)>> = None,
 	/// Height of a tile's title bar, in `rem` — so it tracks the reader's font size (the bar has to
 	/// fit its tab text) rather than the viewport, which the grid already handles via [`Breakpoint`].
@@ -85,18 +42,16 @@ pub struct Config {
 	pub title_h_rem: f64 = 2.0,
 }
 
-/// Config never changes at runtime; a binding compares it only to decide whether to re-seed. The
-/// action closures have no identity, so equality is over the keybinds and the registered chords.
+/// Config never changes at runtime; a binding compares it only to decide whether to re-seed.
+/// Closures have no identity, so `on_save` compares by presence.
 impl PartialEq for Config {
 	fn eq(&self, other: &Self) -> bool {
-		self.keybinds == other.keybinds
+		self.keymap == other.keymap
 			&& self.steps == other.steps
 			&& self.rows == other.rows
 			&& self.storage_key == other.storage_key
 			&& self.on_save.is_some() == other.on_save.is_some()
 			&& self.title_h_rem == other.title_h_rem
-			&& self.actions.len() == other.actions.len()
-			&& self.actions.iter().zip(&other.actions).all(|(a, b)| a.0 == b.0)
 	}
 }
 

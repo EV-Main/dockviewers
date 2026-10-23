@@ -13,7 +13,7 @@ use leptos::{
 	tachys::view::any_view::AnyViewState,
 };
 use send_wrapper::SendWrapper;
-use tilers_leptos::{Config, DockPanel, Group, GroupId, Keybind, Keybinds, MinSize, PackedApi, PackedArea, PanelId};
+use tilers_leptos::{Config, DockPanel, Group, GroupId, MinSize, PackedApi, PackedArea, PanelId, keys::Keymap};
 use wasm_bindgen::prelude::*;
 use web_sys::HtmlElement;
 
@@ -129,8 +129,8 @@ pub fn mount(root: HtmlElement, mut seeds: Vec<Seed>, storage_key: String, on_sl
 
 	let config = Config {
 		storage_key: Some(storage_key),
-		keybinds: Keybinds {
-			help: Keybind { key: "H", alt: false, ctrl: false }, // `?` is Grafana's shortcuts modal
+		keymap: Keymap {
+			root: vec![], // Grafana's Ctrl+Z is time-range zoom out
 			..Default::default()
 		},
 		..Default::default()

@@ -58,14 +58,14 @@ Runnable demo: `dx serve --example insilico --package tilers_dioxus --platform w
 
 **Mins** belong to the panel: `MinSize::Px`/`Rem` size its content box, `Steps` the whole tile. Every tile is floored to the max over its tabs, re-resolved on every measure, so a px need holds however short the window gets; a want the floor overrode comes back once the floor drops. Edit a panel's `min` in `panels` to re-floor it.
 
-**Bands and the seed cache.** A container width classifies into one of three `Band`s — `sm`/`md`/`xl` — each keeping its own arrangement, because a phone doesn't want a desktop's tiling. Set `Config::storage_key` and the framework caches the layout in `localStorage` under `<key>-<band>` on `Alt+S`, restoring it before your code runs. `on_band` fires once per band entry — at mount, and again on every crossing — *after* that resolution:
+**Bands and the seed cache.** A container width classifies into one of three `Band`s — `sm`/`md`/`xl` — each keeping its own arrangement, because a phone doesn't want a desktop's tiling. Set `Config::storage_key` and the framework caches the layout in `localStorage` under `<key>-<band>` on `leader s s`, restoring it before your code runs. `on_band` fires once per band entry — at mount, and again on every crossing — *after* that resolution:
 
 - `api.restored()` ⇒ the cache had a layout and the grid is already populated; walk `api.tab_ids()` to rebuild your panel list from the ids it holds.
 - otherwise the grid is empty and it's yours to fill: `place` your tiles, or `load` a default you fetched yourself.
 
 A cached payload that is corrupt, from a future schema, or empty counts as a miss and says so on the console — never a silent reset. Persistence is wasm-only (a no-op natively, so every band reports a miss).
 
-**Publishing a default.** The framework never talks to a server. `Alt+Shift+S` hands `Config::on_save` a `Saved::Published { band, json }` and does nothing else; persist it wherever you like (behind your own authorization) to become the default fresh clients `load` in `on_band`. `Alt+S` fires the same hook with `Saved::Cached { band }`, for feedback — the write already happened.
+**Publishing a default.** The framework never talks to a server. `leader s p` hands `Config::on_save` a `Saved::Published { band, json }` and does nothing else; persist it wherever you like (behind your own authorization) to become the default fresh clients `load` in `on_band`. `leader s s` fires the same hook with `Saved::Cached { band }`, for feedback — the write already happened.
 
 **Scripting** — `PackedApi` arrives through `on_band`; stash it in a signal to drive the dock from elsewhere. Every method is a read/write of the one state cell:
 
@@ -80,11 +80,11 @@ let json = api.save(); api.load(&json)?;   // `load` errors on corrupt/future JS
 api.cols(); api.band(); api.tab_ids();
 ```
 
-**Keybinds** (`Config::keybinds`, all rebindable; `?` lists the live set): `u`/`U` undo/redo, `Backspace` closes the focused pane, `f` maximizes it, `d` inspects the tile under the cursor, `Alt+S` caches, `Alt+Shift+S` publishes. None fire while an editable field has focus. `Config::actions` takes your own `(Keybind, Rc<dyn Fn(&mut PackedState)>)` pairs.
+**Keybinds** (`Config::keymap`). The framework claims only `Keymap::root` and one leader, `Alt+t` (`Ctrl+t` on macOS); everything else waits behind the leader, where a which-key popup lists the next keys after `--tl-hint-delay` (150ms). Root holds `Ctrl+z`/`Ctrl+y`/`Ctrl+Shift+z` (`Cmd` on macOS) for undo/redo; aimed at a text field they stay the browser's text undo. Behind the leader: `u`/`U` undo/redo, `Backspace` closes the focused pane, `f` maximizes it, `d` inspects it, `?` lists the whole keymap (as does each tile's `?` button), and `s s`/`s p` cache/publish the layout (unbound without `storage_key`/`on_save`). Rebinding the leader is `Keymap { leader: Chord { key: "g", alt: true, .. }.into(), ..Default::default() }`; dropping it for flat binds is `k.root.append(&mut k.scope)`. Your own commands are `Node::Run(Command::Custom { label, run })` at any depth, `Node::Scope` nests.
 
 **Grid** — `Config::steps` (default 64) is the desktop column count, scaled down per band so the *physical* step stays ~constant and tiles reflow instead of shrinking; `rows` (default 36) is fixed.
 
-**Theming** — only structural CSS ships; set `--tl-*` custom properties on any ancestor for colors/sizes (`--tl-accent`, `--tl-fg`, `--tl-group-bg`, `--tl-tab-bg`, `--tl-tab-active-bg`, `--tl-tab-active-fg`, `--tl-tab-border`, `--tl-tabstrip-bg`, `--tl-resize-bg`, `--tl-shadow-bg`, `--tl-content-pad`).
+**Theming** — only structural CSS ships; set `--tl-*` custom properties on any ancestor for colors/sizes (`--tl-accent`, `--tl-fg`, `--tl-group-bg`, `--tl-tab-bg`, `--tl-tab-active-bg`, `--tl-tab-active-fg`, `--tl-tab-border`, `--tl-tabstrip-bg`, `--tl-resize-bg`, `--tl-shadow-bg`, `--tl-content-pad`, `--tl-hint-delay`).
 
 
 

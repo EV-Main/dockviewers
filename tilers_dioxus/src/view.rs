@@ -91,7 +91,7 @@ impl PackedApi {
 }
 
 /// Root of the packed layout. Owns the `Signal<PackedState>` (root-scope, so the [`PackedApi`] it
-/// hands the host outlives this component), installs the window keydown/pointer listeners, measures
+/// hands the host outlives this component), installs the window keydown/blur listeners, measures
 /// its own box, and stacks the tile skeleton over the content overlay.
 ///
 /// - `panels` is a `Signal` so windows spawned at runtime appear in the overlay.
@@ -115,34 +115,23 @@ pub fn PackedArea(panels: Signal<Vec<DockPanel>>, on_band: Option<Callback<Packe
 	let mut root = use_signal(|| None::<web_sys::Element>);
 
 	// Keybinds are app-level: a `window` keydown listener (not an element `onkeydown`, which fires
-	// only while the dock subtree holds DOM focus — it usually doesn't). A sibling `pointermove`
-	// tracks the raw cursor for the `d` hit-test. Both are removed on unmount.
+	// only while the dock subtree holds DOM focus — it usually doesn't), plus `blur` to drop a chord
+	// the window stopped hearing. Both are removed on unmount.
 	#[cfg(target_arch = "wasm32")]
 	let listeners = use_hook(move || {
 		use wasm_bindgen::{JsCast, closure::Closure};
-		let cursor = std::rc::Rc::new(std::cell::Cell::new((0.0_f64, 0.0_f64)));
-		let track = cursor.clone();
-		let mv = Closure::<dyn FnMut(web_sys::MouseEvent)>::new(move |e: web_sys::MouseEvent| {
-			track.set((e.client_x() as f64, e.client_y() as f64));
-		});
 		let window = web_sys::window().expect("a browser window");
-		window
-			.add_event_listener_with_callback("pointermove", mv.as_ref().unchecked_ref())
-			.expect("add pointermove listener");
-		let mut state = state;
 		let key = Closure::<dyn FnMut(web_sys::KeyboardEvent)>::new(move |e: web_sys::KeyboardEvent| {
-			// Don't hijack typing: ignore keys aimed at a form field / editable content, so a bare
-			// `u`/`f`/`Backspace` bind only acts on the layout, never on text the user is entering.
-			if let Some(el) = e.target().and_then(|t| t.dyn_into::<web_sys::Element>().ok()) {
-				if matches!(el.tag_name().as_str(), "INPUT" | "TEXTAREA" | "SELECT") || el.dyn_ref::<web_sys::HtmlElement>().is_some_and(web_sys::HtmlElement::is_content_editable) {
-					return;
-				}
+			// Every keystroke typed into any page input lands here, so the write's notification is
+			// dropped unless something a render reads moved.
+			let (mut s, notify) = state.write_unchecked().into_parts();
+			let out = s.on_key((&e).into());
+			drop(s);
+			if out.changed {
+				drop(notify);
+			} else {
+				std::mem::forget(notify);
 			}
-			let Some(scroll_y) = root.peek().as_ref().map(|el| el.scroll_top() as f64) else {
-				return; // no layout to act on before the root mounts
-			};
-			let (cx, cy) = cursor.get();
-			let out = state.write().on_key(&e.key(), e.alt_key(), e.ctrl_key(), (cx, cy), scroll_y);
 			if out.prevent_default {
 				e.prevent_default();
 			}
@@ -152,18 +141,21 @@ pub fn PackedArea(panels: Signal<Vec<DockPanel>>, on_band: Option<Callback<Packe
 		window
 			.add_event_listener_with_callback_and_bool("keydown", key.as_ref().unchecked_ref(), true)
 			.expect("add keydown listener");
-		std::rc::Rc::new((mv, key))
+		let mut state = state;
+		let blur = Closure::<dyn FnMut()>::new(move || state.write().cancel_chord());
+		window.add_event_listener_with_callback("blur", blur.as_ref().unchecked_ref()).expect("add blur listener");
+		std::rc::Rc::new((key, blur))
 	});
 	#[cfg(target_arch = "wasm32")]
 	use_drop(move || {
 		use wasm_bindgen::JsCast;
 		let window = web_sys::window().expect("a browser window");
 		window
-			.remove_event_listener_with_callback("pointermove", listeners.0.as_ref().unchecked_ref())
-			.expect("remove pointermove listener");
-		window
-			.remove_event_listener_with_callback_and_bool("keydown", listeners.1.as_ref().unchecked_ref(), true)
+			.remove_event_listener_with_callback_and_bool("keydown", listeners.0.as_ref().unchecked_ref(), true)
 			.expect("remove keydown listener");
+		window
+			.remove_event_listener_with_callback("blur", listeners.1.as_ref().unchecked_ref())
+			.expect("remove blur listener");
 	});
 
 	// A panel's declared min is host intent the state re-derives floors from.
@@ -185,10 +177,10 @@ pub fn PackedArea(panels: Signal<Vec<DockPanel>>, on_band: Option<Callback<Packe
 	let content = state.read().content_slots();
 	let ghost = state.read().ghost(&titles);
 	let inspect = state.read().inspect();
-	let help_rows = state.read().help_rows();
+	let help = state.read().help(&titles);
+	let hint = state.read().hint();
 	let dragging = state.read().dragging();
 	let resizing = state.read().resizing();
-	let help_open = state.read().help_open();
 	let panel_list = panels.read().clone();
 
 	rsx! {
@@ -259,6 +251,16 @@ pub fn PackedArea(panels: Signal<Vec<DockPanel>>, on_band: Option<Callback<Packe
 									}
 								}
 								div { class: "tl-actions",
+									button {
+										class: "tl-action",
+										title: "Keybinds",
+										onpointerdown: |e: PointerEvent| e.stop_propagation(),
+										onclick: {
+											let gid = frame.gid;
+											move |_| state.write().open_help(gid)
+										},
+										"?"
+									}
 									button {
 										class: "tl-action",
 										title: "Add window as a tab",
@@ -364,14 +366,32 @@ pub fn PackedArea(panels: Signal<Vec<DockPanel>>, on_band: Option<Callback<Packe
 					div { class: "tl-header", div { class: "tl-tab tl-active", "{g.title}" } }
 				}
 			}
-			if help_open {
+			// Which-key popup for a pending chord. `.tl-hint` delays its own reveal in CSS.
+			if let Some(h) = hint {
+				div { class: "tl-hint",
+					div { class: "tl-hint-prefix", "{h.prefix}" }
+					for r in h.rows.iter() {
+						div { class: "tl-hint-row",
+							span { class: "tl-help-key", "{r.chord}" }
+							span { "{r.label}" }
+							if r.scope {
+								span { " …" }
+							}
+						}
+					}
+				}
+			}
+			if let Some(help) = help {
 				div { class: "tl-help-scrim", onclick: move |_| state.write().close_help(),
 					div { class: "tl-help",
 						div { class: "tl-help-title", "Keybinds" }
-						for (label, chord) in help_rows.iter() {
+						if let Some(p) = help.pane {
+							div { class: "tl-help-pane", {p} }
+						}
+						for (chord, label) in help.rows {
 							div { class: "tl-help-row",
-								span { class: "tl-help-label", {*label} }
-								span { class: "tl-help-key", {chord.clone()} }
+								span { class: "tl-help-label", {label} }
+								span { class: "tl-help-key", {chord} }
 							}
 						}
 						div { class: "tl-help-foot", "click anywhere to close" }

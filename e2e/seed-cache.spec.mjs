@@ -1,9 +1,9 @@
 import { expect, test } from '@playwright/test'
 
 // The framework's built-in client-side layout cache, exercised through the insilico example (which
-// carries zero persistence code of its own — that is the point). `Alt+S` writes the live layout to
+// carries zero persistence code of its own — that is the point). `Alt+t s s` writes the live layout to
 // `localStorage` under `<storage_key>-<band>`; a reload restores it instead of re-seeding; a
-// viewport change into another band uses a different key; `Alt+Shift+S` only calls the host hook.
+// viewport change into another band uses a different key; `Alt+t s p` only calls the host hook.
 
 const KEY = 'insilico-layout'
 
@@ -14,6 +14,13 @@ const boot = async (page) => {
 	await page.waitForSelector('.tl-header', { timeout: 30_000 })
 }
 
+/** A chord sequence: each keydown in turn, as a user types it. */
+const chord = async (page, ...keys) => {
+	for (const k of keys) await page.keyboard.press(k)
+}
+const CACHE = ['Alt+t', 's', 's']
+const PUBLISH = ['Alt+t', 's', 'p']
+
 const cache = (page, band) => page.evaluate((k) => localStorage.getItem(k), `${KEY}-${band}`)
 const keys = (page) => page.evaluate(() => Object.keys(localStorage).sort())
 /** Tile geometry, in the skeleton's own order — the layout's observable signature. */
@@ -21,11 +28,11 @@ const geometry = (page) => page.$$eval('.tl-tile', (els) => els.map((e) => e.get
 
 test.beforeEach(async ({ page }) => await boot(page))
 
-test('Alt+S caches the current band under its own key', async ({ page }) => {
+test('leader s s caches the current band under its own key', async ({ page }) => {
 	expect(await cache(page, 'xl'), 'a fresh profile starts with no cache').toBe(null)
-	await page.keyboard.press('Alt+s')
+	await chord(page, ...CACHE)
 	const json = await cache(page, 'xl')
-	expect(json, 'Alt+S must write the xl entry').not.toBe(null)
+	expect(json, 'leader s s must write the xl entry').not.toBe(null)
 	expect(JSON.parse(json), 'the cached payload is the versioned layout').toHaveProperty('grid')
 })
 
@@ -39,30 +46,30 @@ test('a cached layout survives a reload', async ({ page }) => {
 	await page.mouse.up()
 
 	const edited = await geometry(page)
-	await page.keyboard.press('Alt+s')
+	await chord(page, ...CACHE)
 	await page.reload()
 	await page.waitForSelector('.tl-header', { timeout: 30_000 })
 	expect(await geometry(page), 'the restored layout must match what was cached').toEqual(edited)
 })
 
 test('each band caches under its own key', async ({ page }) => {
-	await page.keyboard.press('Alt+s')
+	await chord(page, ...CACHE)
 	const xl = await cache(page, 'xl')
 	expect(xl).not.toBe(null)
 
 	await page.setViewportSize({ width: 700, height: 800 })
 	// The band change re-seeds; wait for the dock to settle into the narrow arrangement.
 	await page.waitForFunction(() => document.querySelectorAll('.tl-tile').length > 0)
-	await page.keyboard.press('Alt+s')
+	await chord(page, ...CACHE)
 
 	expect(await cache(page, 'sm'), 'the narrow band writes the sm entry').not.toBe(null)
 	expect(await cache(page, 'xl'), 'the xl entry must be untouched by an sm save').toBe(xl)
 })
 
-test('Alt+Shift+S calls the host hook without touching the cache', async ({ page }) => {
+test('leader s p calls the host hook without touching the cache', async ({ page }) => {
 	const before = await keys(page)
 	const dialog = new Promise((resolve) => page.once('dialog', (d) => resolve(d.message()) || d.dismiss()))
-	await page.keyboard.press('Alt+Shift+S')
+	await chord(page, ...PUBLISH)
 	expect(await dialog, "the example's publish hook alerts").toContain('publish')
 	expect(await keys(page), 'publish must not write localStorage').toEqual(before)
 })

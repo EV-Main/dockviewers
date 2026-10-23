@@ -1,3 +1,4 @@
+#![feature(default_field_values)]
 //! Animates a real fuzz trace into one self-contained SMIL SVG, and prints the variant-coverage
 //! table the film exists to make visible. The fuzzer is pure Rust and headless, so every rendered
 //! frame is already known here — no browser, no rasterizer, no ffmpeg: the browser tweens between
@@ -54,7 +55,7 @@ const C_FG: &str = "#ddd";
 /// `--tl-shadow-bg` is `rgba(160,160,160,0.18)`; flattened over the tile bg so the landing cell is
 /// legible at film scale.
 const C_SHADOW: &str = "#3d3d3d";
-const BUCKETS: [&str; 28] = [
+const BUCKETS: [&str; 31] = [
 	"Measure",
 	"Place",
 	"AddTab",
@@ -63,6 +64,7 @@ const BUCKETS: [&str; 28] = [
 	"Resize",
 	"Key",
 	"SaveLoad",
+	"SetMins",
 	"drag: arms",
 	"drag: stays a click",
 	"drag: released",
@@ -72,19 +74,19 @@ const BUCKETS: [&str; 28] = [
 	"resolved Tab",
 	"resolved Displace",
 	"resolved Pack",
-	"key Close",
-	"key Maximize",
 	"key Undo",
 	"key Redo",
-	"key Help",
-	"key Escape",
+	"key Close",
+	"key Maximize",
 	"key Inspect",
+	"key Help",
+	"key Cache",
+	"key Publish",
+	"key Escape",
+	"key noise",
 	"band sm",
 	"band md",
 	"band xl",
-	// Appended rather than slotted next to the other action kinds, so the existing bit indices below
-	// don't all shift.
-	"SetMins",
 ];
 /// Every flag also reads a `FILM_*` variable, so the film is scriptable from an env without a
 /// second code path; clap's precedence puts the flag first.
@@ -177,7 +179,8 @@ fn main() {
 /// The bucket mask one applied input event lands in. Drop targets are the ones `resolve_target`
 /// actually returned during the gesture, not the ones the generator aimed for.
 fn hit(action: &actions::Action, world: &sim::World) -> u32 {
-	use actions::{Action as A, Grab, KeyKind as K};
+	use actions::{Action as A, Aim, Grab};
+	use tilers_core::keys::Builtin as B;
 	let mut m = 1
 		<< match action {
 			A::Measure { .. } => 0,
@@ -186,41 +189,47 @@ fn hit(action: &actions::Action, world: &sim::World) -> u32 {
 			A::Focus { .. } => 3,
 			A::Drag { .. } => 4,
 			A::Resize { .. } => 5,
-			A::Key(_) => 6,
+			A::Key { .. } => 6,
 			A::SaveLoad => 7,
-			A::SetMins { .. } => 27,
+			A::SetMins { .. } => 8,
 		};
 	if let A::Drag { grab, commit, .. } = action {
-		m |= 1 << if world.resolved.is_empty() { 9 } else { 8 };
-		m |= 1 << if *commit { 10 } else { 11 };
+		m |= 1 << if world.resolved.is_empty() { 10 } else { 9 };
+		m |= 1 << if *commit { 11 } else { 12 };
 		m |= 1
 			<< match grab {
-				Grab::Tile { .. } => 12,
-				Grab::Tab { .. } => 13,
+				Grab::Tile { .. } => 13,
+				Grab::Tab { .. } => 14,
 			};
 		for t in &world.resolved {
 			m |= 1
 				<< match t {
-					DropTarget::Tab { .. } => 14,
-					DropTarget::Displace { .. } => 15,
-					DropTarget::Pack { .. } => 16,
+					DropTarget::Tab { .. } => 15,
+					DropTarget::Displace { .. } => 16,
+					DropTarget::Pack { .. } => 17,
 				};
 		}
 	}
-	if let A::Key(k) = action {
+	if let A::Key { inputs, aim } = action {
 		m |= 1
-			<< match k {
-				K::Close => 17,
-				K::Maximize => 18,
-				K::Undo => 19,
-				K::Redo => 20,
-				K::Help => 21,
-				K::Escape => 22,
-				K::Inspect => 23,
+			<< match aim {
+				Aim::Builtin(B::Undo) => 18,
+				Aim::Builtin(B::Redo) => 19,
+				Aim::Builtin(B::Close) => 20,
+				Aim::Builtin(B::Maximize) => 21,
+				Aim::Builtin(B::Inspect) => 22,
+				Aim::Builtin(B::Help) => 23,
+				Aim::Builtin(B::Cache) => 24,
+				Aim::Builtin(B::Publish) => 25,
+				Aim::Escape => 26,
+				Aim::Builtin(b) => unreachable!("{b:?} has no bucket"),
 			};
+		if actions::noisy(inputs) {
+			m |= 1 << 27;
+		}
 	}
 	m |= 1
-		<< (24
+		<< (28
 			+ ["sm", "md", "xl"]
 				.iter()
 				.position(|b| *b == world.state.band().to_string())
@@ -250,7 +259,7 @@ fn summary(action: &actions::Action, world: &sim::World) -> String {
 			format!("Drag {what} -> {to}{}", if *commit { "" } else { " [cancelled]" })
 		}
 		A::Resize { idx, commit, .. } => format!("Resize tile #{idx}{}", if *commit { "" } else { " [still held]" }),
-		A::Key(k) => format!("Key {k:?}"),
+		A::Key { inputs, aim } => format!("Key {aim:?}{}", if actions::noisy(inputs) { " [noisy]" } else { "" }),
 		A::SaveLoad => "SaveLoad".to_string(),
 		A::SetMins { panel, min } => format!("SetMins {} = {}", panel.0, min_label(min)),
 	}

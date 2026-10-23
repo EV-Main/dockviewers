@@ -10,7 +10,9 @@ Everything a renderer would keep in reactive cells lives on **one plain struct**
 `PackedState`, and every event is a `&mut self` method taking already-extracted
 primitives. The binding does the DOM read and passes numbers and strings in; it gets
 back plain view-model data (`frames`, `content_slots`, `ghost`) with inline styles
-already computed, which a template renders 1:1.
+already computed, which a template renders 1:1. Keyboard input is the exception: decoding a
+`KeyboardEvent` (`KeyInput: From<&KeyboardEvent>`, the editable check) and detecting the platform
+live in core, so the two bindings can't diverge on what a keystroke is.
 
 So the whole gesture machine — drag, resize, undo, refit, keybinds, the seed cache —
 is ordinary Rust, testable without a DOM, and shared verbatim by both bindings. A
@@ -42,9 +44,12 @@ flowchart LR
 - `model/serial` — versioned JSON. `PackedGrid` *is* the serialized value; the schema
   tag is the seam for migrations, and `load` errors on a younger payload rather than
   silently wiping a workspace.
-- `state` — the reducer over `PackedState`: gestures, undo history, `on_key`, the
-  measure/refit path, the view-model getters, and the **band latch** (below).
-- `config` — `Config` (steps/rows/keybinds/storage key/save hook), `Keybinds`,
+- `state` — the reducer over `PackedState`: gestures, undo history, `on_key` and command
+  dispatch, the measure/refit path, the view-model getters (incl. `hint`/`help`), and the
+  **band latch** (below).
+- `keys` — `Keymap` (leader, scope, root) of `Binding`s, its per-platform resolution into a
+  chord trie, and `KeyInput` normalization (layout- and platform-independent key identity).
+- `config` — `Config` (steps/rows/keymap/storage key/save hook),
   `Breakpoint` (5 widths, sets the column count) and `Band` (3 widths, the persistence
   key), `Saved`.
 - `persist` — `localStorage` read/write, wasm-only (a native no-op), crate-internal.
@@ -57,7 +62,7 @@ handle over that cell — to the host through `on_band`.
 `tilers_grafana` is a *host* of the Leptos binding, not a third binding: a Grafana app
 plugin (`plugin/`, TS + `@grafana/scenes`) whose wasm half mounts `PackedArea` with one bare slot
 per panel, and the plugin portals each panel's native `VizPanel` into its slot. Everything
-Grafana-shaped — the save-model conversion, the `gridPos` seed, keybinds clear of Grafana's —
+Grafana-shaped — the save-model conversion, the `gridPos` seed, an empty `Keymap::root` (Grafana owns Ctrl+Z) —
 stays inside that crate. It is released as a plugin zip on `grafana-v*` tags, not to crates.io.
 
 ## The seed cache
@@ -73,7 +78,7 @@ what is on screen — i.e. once per band entry. On that edge it resets the grid,
 invokes the host's `on_band`, which sees `api.restored()` and either re-attaches content
 to the restored tiles or lays out a fresh spread.
 
-The framework caches on `Alt+S` and **never talks to a server**. `Alt+Shift+S` hands the
+The framework caches on `leader s s` and **never talks to a server**. `leader s p` hands the
 JSON to `Config::on_save` and does nothing else; a host that wants a site-wide default
 persists it itself, behind its own authorization, and `load`s it in `on_band` when the
 cache missed. Precedence is therefore: client cache → host default → host built-in seed.
@@ -94,6 +99,10 @@ cache missed. Precedence is therefore: client cache → host default → host bu
   tabs' declared mins at the live step, on every measure and tab change; never stored as layout.
 - A cached layout that is corrupt, from a future schema, or empty is a **miss** that says
   so on the console — never a silent wipe.
+- The framework's global key footprint is exactly `Keymap::root` ∪ {leader} ∪ {Esc while the
+  help, an inspect popup or a chord is open}. Everything else waits behind the leader.
+- A key aimed at an editable never acts, so text undo and typing stay native.
+- The reducer is time-free; any delay (the which-key reveal) is presentation, in CSS.
 
 ## References
 
