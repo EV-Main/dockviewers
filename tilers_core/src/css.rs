@@ -21,7 +21,8 @@ pub const CSS: &str = r#"
 	top: calc(var(--tl-title-h, 2rem) / 4); bottom: calc(var(--tl-title-h, 2rem) / 8);
 	background: radial-gradient(circle, var(--tl-fg, #ddd) 1px, transparent 1.2px) center / 4px 4px;
 	opacity: 0.3; }
-.tl-header:hover::before { opacity: 0.6; }
+/* Lit only where a press takes the whole tile, never over a tab or an action. */
+.tl-header:hover:not(:has(.tl-tab:hover, .tl-actions:hover))::before { opacity: 0.6; }
 .tl-actions { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center; gap: 2px; padding: 0 4px; }
 .tl-action { cursor: pointer; border: 0; background: transparent; color: var(--tl-fg, #ddd);
 	opacity: 0.55; padding: 0 5px; font: inherit; line-height: 1; }
@@ -31,6 +32,7 @@ pub const CSS: &str = r#"
 	border-right: 1px solid var(--tl-tab-border, #1e1e1e); }
 .tl-tab.tl-active { background: var(--tl-tab-active-bg, #1e1e1e);
 	color: var(--tl-tab-active-fg, #fff); }
+.tl-tab:hover { filter: brightness(1.3); }
 .tl-content-slot { flex: 1 1 auto; overflow: hidden; }
 .tl-overlay { position: absolute; inset: 0; pointer-events: none; }
 .tl-render-overlay { position: absolute; overflow: hidden; pointer-events: auto;
