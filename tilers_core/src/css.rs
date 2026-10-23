@@ -13,7 +13,15 @@ pub const CSS: &str = r#"
    The top/left rim keeps a grip on the whole tile however many tabs fill the strip. */
 .tl-header { flex: 0 0 auto; height: var(--tl-title-h, 2rem); box-sizing: border-box; display: flex;
 	padding: calc(var(--tl-title-h, 2rem) / 8) 0 0 calc(var(--tl-title-h, 2rem) * 3 / 8);
-	align-items: stretch; overflow: hidden; cursor: grab; background: var(--tl-tabstrip-bg, #2d2d2d); }
+	align-items: stretch; overflow: hidden; cursor: grab; background: var(--tl-tabstrip-bg, #2d2d2d);
+	position: relative; }
+/* Grip dots on the left rim, the drag-handle texture. */
+.tl-header::before { content: ""; position: absolute; pointer-events: none;
+	left: calc(var(--tl-title-h, 2rem) / 16); width: calc(var(--tl-title-h, 2rem) / 4);
+	top: calc(var(--tl-title-h, 2rem) / 4); bottom: calc(var(--tl-title-h, 2rem) / 8);
+	background: radial-gradient(circle, var(--tl-fg, #ddd) 1px, transparent 1.2px) center / 4px 4px;
+	opacity: 0.3; }
+.tl-header:hover::before { opacity: 0.6; }
 .tl-actions { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center; gap: 2px; padding: 0 4px; }
 .tl-action { cursor: pointer; border: 0; background: transparent; color: var(--tl-fg, #ddd);
 	opacity: 0.55; padding: 0 5px; font: inherit; line-height: 1; }
