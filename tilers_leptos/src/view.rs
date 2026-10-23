@@ -55,6 +55,11 @@ impl PackedApi {
 		self.state.with(|s| s.cols())
 	}
 
+	/// Whole rows the container shows.
+	pub fn rows(&self) -> u32 {
+		self.state.with(|s| s.rows())
+	}
+
 	/// The band the layout is stored under.
 	pub fn band(&self) -> Band {
 		self.state.with(|s| s.band())

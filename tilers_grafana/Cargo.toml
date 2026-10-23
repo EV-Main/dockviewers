@@ -17,7 +17,7 @@ leptos.workspace = true
 send_wrapper.workspace = true
 tilers_leptos = { workspace = true, features = ["csr"] }
 wasm-bindgen.workspace = true
-web-sys = { workspace = true, features = ["HtmlElement", "console"] }
+web-sys = { workspace = true, features = ["CssStyleDeclaration", "Document", "Element", "HtmlElement", "Window", "console"] }
 
 [lints]
 workspace = true

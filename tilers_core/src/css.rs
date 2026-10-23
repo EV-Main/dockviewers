@@ -28,7 +28,9 @@ pub const CSS: &str = r#"
 /* Pinned to half the title bar, so the grab corner keeps its proportion at any chrome height. */
 .tl-resize-handle { position: absolute; right: 0; bottom: 0;
 	width: calc(var(--tl-title-h, 2rem) / 2); height: calc(var(--tl-title-h, 2rem) / 2);
-	cursor: nwse-resize; z-index: 101; background: var(--tl-resize-bg, #555); }
+	cursor: nwse-resize; z-index: 101;
+	/* over the tile's own background, so no theme lets the content under the corner (its scrollbar) show through */
+	background: linear-gradient(var(--tl-resize-bg, #555), var(--tl-resize-bg, #555)), var(--tl-group-bg, #1e1e1e); }
 .tl-resize-handle::after { content: "⌟"; position: absolute; right: 0.08em; bottom: -0.23em;
 	font-size: calc(var(--tl-title-h, 2rem) / 2); line-height: 1; color: var(--tl-fg, #ddd); }
 /* Horizontal is fully model-bounded (every tile satisfies x + w ≤ cols), so a horizontal
