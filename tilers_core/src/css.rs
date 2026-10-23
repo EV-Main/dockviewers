@@ -12,7 +12,7 @@ pub const CSS: &str = r#"
    Its empty area is the tile's move-handle; tabs/actions stop propagation for their own gestures.
    The top/left rim keeps a grip on the whole tile however many tabs fill the strip. */
 .tl-header { flex: 0 0 auto; height: var(--tl-title-h, 2rem); box-sizing: border-box; display: flex;
-	padding: calc(var(--tl-title-h, 2rem) / 8) 0 0 calc(var(--tl-title-h, 2rem) / 8);
+	padding: calc(var(--tl-title-h, 2rem) / 8) 0 0 calc(var(--tl-title-h, 2rem) * 3 / 8);
 	align-items: stretch; overflow: hidden; cursor: grab; background: var(--tl-tabstrip-bg, #2d2d2d); }
 .tl-actions { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center; gap: 2px; padding: 0 4px; }
 .tl-action { cursor: pointer; border: 0; background: transparent; color: var(--tl-fg, #ddd);

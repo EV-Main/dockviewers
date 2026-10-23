@@ -320,7 +320,17 @@ pub fn PackedArea(
 								)
 							>
 								<div class="tl-header">
-									<div class="tl-tab tl-active">{g.title}</div>
+									{g
+										.tabs
+										.into_iter()
+										.map(|t| {
+											view! {
+												<div class=if t.active { "tl-tab tl-active" } else { "tl-tab" }>
+													{t.title}
+												</div>
+											}
+										})
+										.collect_view()}
 								</div>
 							</div>
 						}

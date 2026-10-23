@@ -776,17 +776,7 @@ impl PackedState {
 				});
 				continue;
 			}
-			let tabs = cell
-				.group
-				.tabs
-				.iter()
-				.enumerate()
-				.map(|(i, id)| Tab {
-					id: id.clone(),
-					title: titles.get(id).cloned().unwrap_or_default(),
-					active: i == cell.group.active,
-				})
-				.collect();
+			let tabs = Tab::strip(&cell.group, titles);
 			out.push(Frame {
 				gid,
 				idx,
@@ -864,19 +854,17 @@ impl PackedState {
 	/// keeping the grabbed point under the cursor, while its shadow snaps to the landing cell.
 	pub fn ghost(&self, titles: &HashMap<PanelId, String>) -> Option<Ghost> {
 		let d = self.drag.as_ref().filter(|d| d.armed)?;
-		let title = match &d.source {
-			DragSource::Tile(g) => self
-				.grid
-				.cells
-				.iter()
-				.find(|c| c.group.id == *g)
-				.map(|c| titles.get(c.group.active_panel()).cloned().unwrap_or_default())
-				.unwrap_or_default(),
-			DragSource::Tab { panel, .. } => titles.get(panel).cloned().unwrap_or_default(),
+		let tabs = match &d.source {
+			DragSource::Tile(g) => Tab::strip(&self.grid.cells.iter().find(|c| c.group.id == *g).expect("drag source group exists").group, titles),
+			DragSource::Tab { panel, .. } => vec![Tab {
+				id: panel.clone(),
+				title: titles.get(panel).cloned().unwrap_or_default(),
+				active: true,
+			}],
 		};
 		let (sw, sh) = self.step_px;
 		Some(Ghost {
-			title,
+			tabs,
 			left: d.cursor.0 - d.grab.0,
 			top: d.cursor.1 - d.grab.1,
 			w: d.src_w as f64 * sw,
@@ -964,14 +952,28 @@ pub struct Tab {
 	pub title: String,
 	pub active: bool,
 }
+impl Tab {
+	fn strip(group: &Group, titles: &HashMap<PanelId, String>) -> Vec<Self> {
+		group
+			.tabs
+			.iter()
+			.enumerate()
+			.map(|(i, id)| Self {
+				id: id.clone(),
+				title: titles.get(id).cloned().unwrap_or_default(),
+				active: i == group.active,
+			})
+			.collect()
+	}
+}
 /// A panel's slot in the content overlay: its inline style and host group.
 pub struct ContentSlot {
 	pub style: String,
 	pub group: GroupId,
 }
-/// The floating drag ghost: title to show, top-left in client px, and its size in px.
+/// The floating drag ghost: the header it carries, top-left in client px, and its size in px.
 pub struct Ghost {
-	pub title: String,
+	pub tabs: Vec<Tab>,
 	pub left: f64,
 	pub top: f64,
 	pub w: f64,

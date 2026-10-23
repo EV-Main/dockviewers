@@ -376,7 +376,11 @@ pub fn PackedArea(panels: Signal<Vec<DockPanel>>, on_band: Option<Callback<Packe
 			}
 			if let Some(g) = ghost {
 				div { class: "tl-ghost", style: "left:{g.left}px; top:{g.top}px; width:{g.w}px; height:{g.h}px;",
-					div { class: "tl-header", div { class: "tl-tab tl-active", "{g.title}" } }
+					div { class: "tl-header",
+						for t in g.tabs.iter() {
+							div { key: "{t.id.0}", class: if t.active { "tl-tab tl-active" } else { "tl-tab" }, "{t.title}" }
+						}
+					}
 				}
 			}
 			if let Some(n) = notice {
