@@ -1,3 +1,5 @@
+%YAML 1.1
+---
 env:
   CARGO_INCREMENTAL: '0'
   CARGO_NET_RETRY: '10'
@@ -26,7 +28,8 @@ jobs:
     - name: Initialize qlty
       run: qlty init --no --no-upgrade-check
     - name: Check for code duplication
-      run: cargo +nightly -Zscript -q my_gh_stuff/github/workflows/code-duplication.rs
+      run: cargo +nightly -Zscript -q 
+        my_gh_stuff/github/workflows/code-duplication.rs
     timeout-minutes: 15
   pre_ci:
     uses: valeratrades/.github/.github/workflows/pre_ci.yml@main
@@ -41,7 +44,8 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: modified-cargo-files
-    - run: rm -f "$GITHUB_WORKSPACE/.cargo/config.toml" "$GITHUB_WORKSPACE/.cargo/config"
+    - run: rm -f "$GITHUB_WORKSPACE/.cargo/config.toml" 
+        "$GITHUB_WORKSPACE/.cargo/config"
     - run: cargo clippy --workspace --all-targets -- -Dwarnings
     timeout-minutes: 45
   rust-doc:
@@ -59,10 +63,11 @@ jobs:
       with:
         name: modified-cargo-files
     - uses: dtolnay/install@cargo-docs-rs
-    - run: rm -f "$GITHUB_WORKSPACE/.cargo/config.toml" "$GITHUB_WORKSPACE/.cargo/config"
-    - run: "for p in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[]\
-        \ | select([.targets[].kind[]] | any(. == \"lib\" or . == \"proc-macro\"))\
-        \ | .name'); do\n  cargo docs-rs -p \"$p\"\ndone\n"
+    - run: rm -f "$GITHUB_WORKSPACE/.cargo/config.toml" 
+        "$GITHUB_WORKSPACE/.cargo/config"
+    - run: "for p in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[]
+        | select([.targets[].kind[]] | any(. == \"lib\" or . == \"proc-macro\")) |
+        .name'); do\n  cargo docs-rs -p \"$p\"\ndone\n"
     timeout-minutes: 45
   rust-machete:
     name: Unused Dependencies
@@ -84,9 +89,9 @@ jobs:
       with:
         tool: cargo-sort
     - name: Check if Cargo.toml is sorted
-      run: "cargo sort --workspace --grouped --check\nexit_code=$?\nif [ $exit_code\
-        \ != 0 ]; then\n  echo \"Cargo.toml is not sorted. Run \\`cargo sort -w\\\
-        ` to fix it.\"\n  exit $exit_code\nfi\n"
+      run: "cargo sort --workspace --grouped --check\nexit_code=$?\nif [ $exit_code
+        != 0 ]; then\n  echo \"Cargo.toml is not sorted. Run \\`cargo sort -w\\` to
+        fix it.\"\n  exit $exit_code\nfi\n"
   rust-sorted-derives:
     name: Sorted Derives
     runs-on: ubuntu-latest
@@ -94,11 +99,11 @@ jobs:
     - uses: actions/checkout@v5
     - uses: cachix/install-nix-action@v31
     - name: Assert derives are sorted
-      run: "\t\t\t\t# `sort-derives` is argv[1] here: the binary is a cargo subcommand,\
-        \ and `nix run` invokes\n\t\t\t\t# it directly rather than through `cargo`,\
-        \ so nothing else supplies that word.\n\t\t\t\tnix run github:valeratrades/v_flakes#cargo-sort-derives\
-        \ -- sort-derives --check\n\t\t\t\texit_code=$?\n\t\t\t\tif [ $exit_code !=\
-        \ 0 ]; then\n\t\t\t\t\techo \"Derives are not sorted. Run \\`cargo sort-derives\\\
+      run: "\t\t\t\t# `sort-derives` is argv[1] here: the binary is a cargo subcommand,
+        and `nix run` invokes\n\t\t\t\t# it directly rather than through `cargo`,
+        so nothing else supplies that word.\n\t\t\t\tnix run github:valeratrades/v_flakes#cargo-sort-derives
+        -- sort-derives --check\n\t\t\t\texit_code=$?\n\t\t\t\tif [ $exit_code !=
+        0 ]; then\n\t\t\t\t\techo \"Derives are not sorted. Run \\`cargo sort-derives\\
         ` to fix it.\"\n\t\t\t\t\texit $exit_code\n\t\t\t\tfi\n\t\t\t"
   tokei:
     name: Reasonable Amount of Comments
@@ -115,12 +120,12 @@ jobs:
     - name: Install jq
       run: sudo apt-get install -y jq
     - name: Check Rust comments
-      run: "\t\t\t\tcomments=$(jq '.Rust.comments' tokei_output.json)\n\t\t\t\tcode=$(jq\
-        \ '.Rust.code' tokei_output.json)\n\n\t\t\t\t# compare: comments > code *\
-        \ 0.15\n\t\t\t\tif [ $((comments * 100)) -ge $((code * 15)) ]; then\n\t\t\t\
-        \t\t\techo \"Number of comments should be less than 15% of code\"\n\t\t\t\t\
-        \t\texit 1\n\t\t\t\telse\n\t\t\t\t\t\techo \"Check passed: Number of comments\
-        \ is less than 15% of code\"\n\t\t\t\tfi\n        \t\t\t"
+      run: "\t\t\t\tcomments=$(jq '.Rust.comments' tokei_output.json)\n\t\t\t\tcode=$(jq
+        '.Rust.code' tokei_output.json)\n\n\t\t\t\t# compare: comments > code * 0.15\n\
+        \t\t\t\tif [ $((comments * 100)) -ge $((code * 15)) ]; then\n\t\t\t\t\t\t\
+        echo \"Number of comments should be less than 15% of code\"\n\t\t\t\t\t\t\
+        exit 1\n\t\t\t\telse\n\t\t\t\t\t\techo \"Check passed: Number of comments
+        is less than 15% of code\"\n\t\t\t\tfi\n        \t\t\t"
 name: Warnings
 'on':
   push: {}
