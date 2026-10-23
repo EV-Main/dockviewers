@@ -74,7 +74,10 @@ pub enum Action {
 		commit: bool,
 	},
 	/// A keystroke sequence reaching `aim`, unless [`noisy`] inputs mixed into it stop it short.
-	Key { inputs: Vec<KeyInput>, aim: Aim },
+	Key {
+		inputs: Vec<KeyInput>,
+		aim: Aim,
+	},
 	/// `save()` → a fresh state measured the same → `load()` → must reproduce the layout.
 	SaveLoad,
 	/// A host re-declaring a panel's min in its panel list. The floor is unbounded by the tile's
@@ -98,45 +101,10 @@ pub enum Aim {
 	Escape,
 }
 
-/// Every leaf of the default keymap as the chords reaching it, so a new bind is fuzzed without
-/// anyone remembering to list it. Platform `other`: natively that is what the state resolves.
-fn sequences() -> Vec<(Vec<Chord>, Builtin)> {
-	fn walk(bs: &[Binding], prefix: &[Chord], out: &mut Vec<(Vec<Chord>, Builtin)>) {
-		for b in bs {
-			let seq = [prefix, &[b.on.other]].concat();
-			match &b.node {
-				Node::Run(Command::Builtin(x)) => out.push((seq, *x)),
-				Node::Scope { children, .. } => walk(children, &seq, out),
-				_ => unreachable!("the default keymap holds only builtins and scopes"),
-			}
-		}
-	}
-	let k = Keymap::default();
-	let mut out = Vec::new();
-	walk(&k.root, &[], &mut out);
-	walk(&k.scope, &[k.leader.other], &mut out);
-	out
-}
-
 /// An unbound key or an editable target: either cancels whatever the sequence had opened.
 pub fn noisy(inputs: &[KeyInput]) -> bool {
 	inputs.iter().any(|k| k.editable || k.key == "j")
 }
-
-/// The keydown a browser reports for `c` on a US layout.
-fn input(c: Chord) -> KeyInput {
-	let letter = c.key.len() == 1 && c.key.chars().all(|ch| ch.is_ascii_alphabetic());
-	KeyInput {
-		key: c.key.to_string(),
-		code: if letter { format!("Key{}", c.key.to_ascii_uppercase()) } else { c.key.to_string() },
-		ctrl: c.ctrl,
-		alt: c.alt,
-		meta: c.meta,
-		shift: letter && c.key.chars().all(|ch| ch.is_ascii_uppercase()),
-		editable: false,
-	}
-}
-
 /// Apply `action`, returning the invariant it violated. Several invariants are only expressible
 /// *around* an action (a cancel is a no-op, an unarmed release only activates), so they live here
 /// rather than in the oracle. `mid` fires after every individual pointer move that passed the
@@ -324,6 +292,41 @@ pub fn generate(frng: &mut Frng, world: &World, weights: &[u32; N_KINDS]) -> Opt
 		_ => unreachable!("kind is one of the constants pushed into `avail`"),
 	})
 }
+
+/// Every leaf of the default keymap as the chords reaching it, so a new bind is fuzzed without
+/// anyone remembering to list it. Platform `other`: natively that is what the state resolves.
+fn sequences() -> Vec<(Vec<Chord>, Builtin)> {
+	fn walk(bs: &[Binding], prefix: &[Chord], out: &mut Vec<(Vec<Chord>, Builtin)>) {
+		for b in bs {
+			let seq = [prefix, &[b.on.other]].concat();
+			match &b.node {
+				Node::Run(Command::Builtin(x)) => out.push((seq, *x)),
+				Node::Scope { children, .. } => walk(children, &seq, out),
+				_ => unreachable!("the default keymap holds only builtins and scopes"),
+			}
+		}
+	}
+	let k = Keymap::default();
+	let mut out = Vec::new();
+	walk(&k.root, &[], &mut out);
+	walk(&k.scope, &[k.leader.other], &mut out);
+	out
+}
+
+/// The keydown a browser reports for `c` on a US layout.
+fn input(c: Chord) -> KeyInput {
+	let letter = c.key.len() == 1 && c.key.chars().all(|ch| ch.is_ascii_alphabetic());
+	KeyInput {
+		key: c.key.to_string(),
+		code: if letter { format!("Key{}", c.key.to_ascii_uppercase()) } else { c.key.to_string() },
+		ctrl: c.ctrl,
+		alt: c.alt,
+		meta: c.meta,
+		shift: letter && c.key.chars().all(|ch| ch.is_ascii_uppercase()),
+		editable: false,
+	}
+}
+
 /// Every `MinSize` arm, `Steps` bounded by `w×h`: the length arms are the ones that re-resolve
 /// against the live step, and `Px` is a content size that must hold through every measure.
 fn min(frng: &mut Frng, w: u32, h: u32) -> MinSize {

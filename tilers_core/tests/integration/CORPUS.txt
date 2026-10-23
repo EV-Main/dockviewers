@@ -36,3 +36,4 @@ sim 5271280808920698878 43 0  # same, one step further: the drag's preview tears
 sim 1794984045769886574 15 3710054129  # cell below its min: Cell { group: Group { id: GroupId(4), tabs: [PanelId("p5")], active: 0 }, x: 35, y: 0, w: 11, h: 7, min_w: 12, min_h: 1, desired_w: None, desired_x: None, rank: 3 } (min 12x1, cols 48)
 # Found by a deliberate mutation (undo without the mid-gesture guard), kept because it is the latent break the guard exists for:
 sim 407 133 2175549210  # PANIC: packed.rs:146:32: index out of bounds: the len is 7 but the index is 7 — an undo mid-resize replaced the cells `resize.idx` points into
+sim 407 133 2456610932  # same undo-mid-resize case, re-recorded after codestyle reordered actions.rs
