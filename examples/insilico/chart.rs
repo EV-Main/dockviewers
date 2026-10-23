@@ -10,14 +10,6 @@ const VOLH: f64 = 64.0; // volume strip height
 const GAP: f64 = 10.0; // gap between candles and volume
 const NCANDLE: usize = 22;
 
-struct Candle {
-	o: f64,
-	h: f64,
-	l: f64,
-	c: f64,
-	v: f64,
-}
-
 #[component]
 pub fn Chart(market: Signal<Market>) -> Element {
 	let m = market.read();
@@ -201,4 +193,11 @@ pub fn Chart(market: Signal<Market>) -> Element {
 			}
 		}
 	}
+}
+struct Candle {
+	o: f64,
+	h: f64,
+	l: f64,
+	c: f64,
+	v: f64,
 }

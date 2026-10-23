@@ -28,19 +28,6 @@ use dioxus::prelude::*;
 use dockviewers_dioxus::{Config, DockPanel, Group, GroupId, MinSize, PackedApi, PackedArea, PanelId, Saved, Step};
 use market::{Market, xorshift};
 
-fn main() {
-	// The only renderer wired in is `dioxus/web`, so a launch needs a wasm host. A native
-	// `cargo run` has nothing to drive — point the user at the real entrypoint instead of
-	// letting dioxus-web panic deep in `spawn_local`.
-	#[cfg(target_arch = "wasm32")]
-	dioxus::launch(app);
-	#[cfg(not(target_arch = "wasm32"))]
-	{
-		std::hint::black_box(app as fn() -> Element);
-		eprintln!("insilico is a web example — run it with:\n  dx serve --example insilico --package dockviewers_dioxus");
-	}
-}
-
 /// The catalog of insilico-style windows. Each declares its title, default size, and a per-type
 /// [`MinSize`] (in whichever unit reads naturally).
 #[derive(Clone, Copy, PartialEq)]
@@ -57,7 +44,6 @@ pub enum Kind {
 	Chat,
 	News,
 }
-
 impl Kind {
 	const ALL: [Kind; 11] = [
 		Kind::Chart,
@@ -112,6 +98,19 @@ impl Kind {
 			Kind::Chat => MinSize::Rem { w: 9.0, h: 8.0 },
 			Kind::News => MinSize::Rem { w: 11.0, h: 6.0 },
 		}
+	}
+}
+
+fn main() {
+	// The only renderer wired in is `dioxus/web`, so a launch needs a wasm host. A native
+	// `cargo run` has nothing to drive — point the user at the real entrypoint instead of
+	// letting dioxus-web panic deep in `spawn_local`.
+	#[cfg(target_arch = "wasm32")]
+	dioxus::launch(app);
+	#[cfg(not(target_arch = "wasm32"))]
+	{
+		std::hint::black_box(app as fn() -> Element);
+		eprintln!("insilico is a web example — run it with:\n  dx serve --example insilico --package dockviewers_dioxus");
 	}
 }
 

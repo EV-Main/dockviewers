@@ -2,48 +2,7 @@ use dioxus::prelude::*;
 
 use crate::market::Market;
 
-/// Stable per-source chip colour so the same handle always reads the same.
-fn src_hue(src: &str) -> &'static str {
-	match src.bytes().fold(0u32, |a, b| a.wrapping_mul(31).wrapping_add(b as u32)) % 6 {
-		0 => "#63e9cd",
-		1 => "#e8c06a",
-		2 => "#7aa2ff",
-		3 => "#ff9d7a",
-		4 => "#c08ae8",
-		_ => "#3ddc84",
-	}
-}
-
-/// Cheap keyword sentiment → (dot colour, tag label, tag colour).
-fn sentiment(body: &str) -> (&'static str, &'static str, &'static str) {
-	let l = body.to_lowercase();
-	let bull = ["record", "inflow", "surge", "rally", "fantastic", "building", "beats", "up", "high"];
-	let bear = ["reject", "dump", "sell-off", "selloff", "down", "low", "fear", "halt", "ban"];
-	if bull.iter().any(|k| l.contains(k)) {
-		("#3ddc84", "BULLISH", "#3ddc84")
-	} else if bear.iter().any(|k| l.contains(k)) {
-		("#ff5d6c", "BEARISH", "#ff5d6c")
-	} else {
-		("#5a6b66", "NEUTRAL", "#5a6b66")
-	}
-}
-
-/// Topic tag from source/content.
-fn topic(src: &str, body: &str) -> &'static str {
-	let l = body.to_lowercase();
-	if src == "Tape" {
-		"TAPE"
-	} else if src.starts_with('@') {
-		"SOCIAL"
-	} else if l.contains("etf") || l.contains("sol") || l.contains("btc") || l.contains("eth") {
-		"CRYPTO"
-	} else {
-		"MACRO"
-	}
-}
-
 const CASHTAGS: [&str; 6] = ["SOL", "BTC", "ETH", "USDT", "ETF", "CO-5"];
-
 #[component]
 pub fn News(market: Signal<Market>) -> Element {
 	let m = market.read();
@@ -113,5 +72,44 @@ pub fn News(market: Signal<Market>) -> Element {
 			}
 			style { "@keyframes nwspulse{{0%,100%{{opacity:1}}50%{{opacity:.25}}}} .nwscard:hover{{background:#10201c}}" }
 		}
+	}
+}
+/// Stable per-source chip colour so the same handle always reads the same.
+fn src_hue(src: &str) -> &'static str {
+	match src.bytes().fold(0u32, |a, b| a.wrapping_mul(31).wrapping_add(b as u32)) % 6 {
+		0 => "#63e9cd",
+		1 => "#e8c06a",
+		2 => "#7aa2ff",
+		3 => "#ff9d7a",
+		4 => "#c08ae8",
+		_ => "#3ddc84",
+	}
+}
+
+/// Cheap keyword sentiment → (dot colour, tag label, tag colour).
+fn sentiment(body: &str) -> (&'static str, &'static str, &'static str) {
+	let l = body.to_lowercase();
+	let bull = ["record", "inflow", "surge", "rally", "fantastic", "building", "beats", "up", "high"];
+	let bear = ["reject", "dump", "sell-off", "selloff", "down", "low", "fear", "halt", "ban"];
+	if bull.iter().any(|k| l.contains(k)) {
+		("#3ddc84", "BULLISH", "#3ddc84")
+	} else if bear.iter().any(|k| l.contains(k)) {
+		("#ff5d6c", "BEARISH", "#ff5d6c")
+	} else {
+		("#5a6b66", "NEUTRAL", "#5a6b66")
+	}
+}
+
+/// Topic tag from source/content.
+fn topic(src: &str, body: &str) -> &'static str {
+	let l = body.to_lowercase();
+	if src == "Tape" {
+		"TAPE"
+	} else if src.starts_with('@') {
+		"SOCIAL"
+	} else if l.contains("etf") || l.contains("sol") || l.contains("btc") || l.contains("eth") {
+		"CRYPTO"
+	} else {
+		"MACRO"
 	}
 }

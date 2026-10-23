@@ -6,31 +6,6 @@ const TEAL: &str = "#63e9cd";
 const MUTED: &str = "#8aa39c";
 const AMBER: &str = "#e8c06a";
 
-/// (tag, color) derived from the message prefix
-fn cat(line: &str) -> (&'static str, &'static str) {
-	if line.starts_with("REJECTED") {
-		("REJECT", DOWN)
-	} else if line.starts_with("FILL") {
-		("FILL", UP)
-	} else if line.starts_with("PLACED") {
-		("ORDER", AMBER)
-	} else if line.starts_with("CANCEL") {
-		("CANCEL", AMBER)
-	} else if line.starts_with("$ ") {
-		("CMD", TEAL)
-	} else {
-		("INFO", MUTED)
-	}
-}
-
-/// tick clock -> [hh:mm:ss]
-fn stamp(t: u64) -> String {
-	let s = t % 60;
-	let m = (t / 60) % 60;
-	let h = (t / 3600) % 24;
-	format!("[{h:02}:{m:02}:{s:02}]")
-}
-
 #[component]
 pub fn Console(market: Signal<Market>) -> Element {
 	let mut input = use_signal(String::new);
@@ -119,4 +94,28 @@ pub fn Console(market: Signal<Market>) -> Element {
 			}
 		}
 	}
+}
+/// (tag, color) derived from the message prefix
+fn cat(line: &str) -> (&'static str, &'static str) {
+	if line.starts_with("REJECTED") {
+		("REJECT", DOWN)
+	} else if line.starts_with("FILL") {
+		("FILL", UP)
+	} else if line.starts_with("PLACED") {
+		("ORDER", AMBER)
+	} else if line.starts_with("CANCEL") {
+		("CANCEL", AMBER)
+	} else if line.starts_with("$ ") {
+		("CMD", TEAL)
+	} else {
+		("INFO", MUTED)
+	}
+}
+
+/// tick clock -> [hh:mm:ss]
+fn stamp(t: u64) -> String {
+	let s = t % 60;
+	let m = (t / 60) % 60;
+	let h = (t / 3600) % 24;
+	format!("[{h:02}:{m:02}:{s:02}]")
 }

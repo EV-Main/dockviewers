@@ -2,6 +2,12 @@ use dioxus::prelude::*;
 
 use crate::market::{DOWN, Market, UP};
 
+const TAPE_CSS: &str = r#"
+@keyframes tp-flash { from { background-color: rgba(99,233,205,0.22); } to { background-color: transparent; } }
+.tp-row.tp-new { animation: tp-flash 0.6s ease-out; box-shadow: inset 0 1px 0 rgba(99,233,205,0.35); }
+.tp-row.tp-whale { box-shadow: inset 2px 0 0 currentColor; }
+.tp-row:hover { background-color: rgba(255,255,255,0.03) !important; }
+"#;
 #[component]
 pub fn Trades(market: Signal<Market>) -> Element {
 	let m = market.read();
@@ -69,10 +75,3 @@ pub fn Trades(market: Signal<Market>) -> Element {
 		}
 	}
 }
-
-const TAPE_CSS: &str = r#"
-@keyframes tp-flash { from { background-color: rgba(99,233,205,0.22); } to { background-color: transparent; } }
-.tp-row.tp-new { animation: tp-flash 0.6s ease-out; box-shadow: inset 0 1px 0 rgba(99,233,205,0.35); }
-.tp-row.tp-whale { box-shadow: inset 2px 0 0 currentColor; }
-.tp-row:hover { background-color: rgba(255,255,255,0.03) !important; }
-"#;

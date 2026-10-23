@@ -7,6 +7,10 @@ pub const SYM: &str = "SOLUSDT";
 pub const UP: &str = "#3ddc84";
 pub const DOWN: &str = "#ff5d6c";
 
+/// `Vec::truncate` keeps the head; chat/news want the newest tail kept.
+pub trait TruncFront<T> {
+	fn truncate_front(&mut self, keep: usize);
+}
 /// xorshift64 — a tiny no-dep PRNG so the sim and random tile sizes need no `rand`.
 pub fn xorshift(s: &mut u64) -> u64 {
 	*s ^= *s << 13;
@@ -124,11 +128,11 @@ impl Market {
 
 		if self.t % 9 == 0 {
 			let who = if self.unit() > 0.5 { "yk" } else { "hr1q9j" };
-			self.chat.push((who, format!("{} {:.2}? gm", SYM, self.px)));
+			self.chat.push((who, format!("{SYM} {:.2}? gm", self.px)));
 			self.chat.truncate_front(40);
 		}
 		if self.t % 23 == 0 {
-			self.news.push(("Tape", format!("{} prints {:.2}, 24h vol building", SYM, self.px)));
+			self.news.push(("Tape", format!("{SYM} prints {:.2}, 24h vol building", self.px)));
 			self.news.truncate_front(20);
 		}
 	}
@@ -183,10 +187,6 @@ impl Market {
 	}
 }
 
-/// `Vec::truncate` keeps the head; chat/news want the newest tail kept.
-pub trait TruncFront<T> {
-	fn truncate_front(&mut self, keep: usize);
-}
 impl<T> TruncFront<T> for Vec<T> {
 	fn truncate_front(&mut self, keep: usize) {
 		if self.len() > keep {

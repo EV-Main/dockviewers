@@ -1,21 +1,9 @@
 use dioxus::prelude::*;
+use std::collections::BTreeSet;
 
 use crate::market::Market;
 
 const ME: &str = "username_hr19j5";
-
-/// stable per-user color so each name reads the same across the tape
-fn user_color(name: &str) -> &'static str {
-	const PAL: [&str; 8] = ["#63e9cd", "#e8c06a", "#7aa2ff", "#ff8fb3", "#9be36a", "#c792ea", "#5ad1e8", "#ffb86c"];
-	let h = name.bytes().fold(0u32, |a, b| a.wrapping_mul(31).wrapping_add(b as u32));
-	PAL[(h % PAL.len() as u32) as usize]
-}
-
-/// `t` is a tick counter, not wall-clock — fold it into a believable HH:MM.
-fn stamp(t: u64) -> String {
-	let mins = t / 4;
-	format!("{:02}:{:02}", 9 + (mins / 60) % 13, mins % 60)
-}
 
 #[component]
 pub fn Chat(market: Signal<Market>) -> Element {
@@ -31,7 +19,7 @@ pub fn Chat(market: Signal<Market>) -> Element {
 		draft.set(String::new());
 	};
 
-	let online = 1 + m.chat.iter().map(|(w, _)| *w).filter(|w| *w != ME).collect::<std::collections::BTreeSet<_>>().len();
+	let online = 1 + m.chat.iter().map(|(w, _)| *w).filter(|w| *w != ME).collect::<BTreeSet<_>>().len();
 
 	rsx! {
 		div { style: "display:flex; height:100%; box-sizing:border-box; font:12px/1.45 system-ui; background:#0c1413; color:#cfe; overflow:hidden;",
@@ -129,4 +117,16 @@ pub fn Chat(market: Signal<Market>) -> Element {
 			}
 		}
 	}
+}
+/// stable per-user color so each name reads the same across the tape
+fn user_color(name: &str) -> &'static str {
+	const PAL: [&str; 8] = ["#63e9cd", "#e8c06a", "#7aa2ff", "#ff8fb3", "#9be36a", "#c792ea", "#5ad1e8", "#ffb86c"];
+	let h = name.bytes().fold(0u32, |a, b| a.wrapping_mul(31).wrapping_add(b as u32));
+	PAL[(h % PAL.len() as u32) as usize]
+}
+
+/// `t` is a tick counter, not wall-clock — fold it into a believable HH:MM.
+fn stamp(t: u64) -> String {
+	let mins = t / 4;
+	format!("{:02}:{:02}", 9 + (mins / 60) % 13, mins % 60)
 }

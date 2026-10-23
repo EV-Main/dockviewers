@@ -9,12 +9,6 @@ use crate::market::{DOWN, Market, UP, xorshift};
 
 const LEVELS: usize = 12;
 
-struct Row {
-	px: f64,
-	size: f64,
-	total: f64,
-}
-
 #[component]
 pub fn OrderBook(market: Signal<Market>) -> Element {
 	let m = market.read();
@@ -125,6 +119,11 @@ pub fn OrderBook(market: Signal<Market>) -> Element {
 			}
 		}
 	}
+}
+struct Row {
+	px: f64,
+	size: f64,
+	total: f64,
 }
 
 /// One depth row. `ask` picks the side's palette and the aggression bar's edge (asks stack upward
