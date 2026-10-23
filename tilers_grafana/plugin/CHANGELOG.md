@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.1
+
+Panels resize by their bottom edge and their right edge as well as the corner; a panel ends above its
+footer and left of its rail, so its scrollbar no longer sits under the corner.
+
 ## 0.3.0
 
 A dock row is a Grafana row (30px and its 8px gap), so panels open at their dashboard height and keep it:

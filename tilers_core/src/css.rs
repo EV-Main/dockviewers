@@ -28,9 +28,13 @@ pub const CSS: &str = r#"
 /* Pinned to half the title bar, so the grab corner keeps its proportion at any chrome height. */
 .tl-resize-handle { position: absolute; right: 0; bottom: 0;
 	width: calc(var(--tl-title-h, 2rem) / 2); height: calc(var(--tl-title-h, 2rem) / 2);
-	cursor: nwse-resize; z-index: 101;
-	/* over the tile's own background, so no theme lets the content under the corner (its scrollbar) show through */
-	background: linear-gradient(var(--tl-resize-bg, #555), var(--tl-resize-bg, #555)), var(--tl-group-bg, #1e1e1e); }
+	cursor: nwse-resize; z-index: 101; background: var(--tl-resize-bg, #555); }
+/* The edge grips: the footer (the corner's height) and a rail on the right, both chrome the content
+   ends before. Bare until hovered. */
+.tl-resize-bottom, .tl-resize-right { position: absolute; z-index: 100; }
+.tl-resize-bottom { left: 0; right: 0; bottom: 0; height: calc(var(--tl-title-h, 2rem) / 2); cursor: ns-resize; }
+.tl-resize-right { right: 0; top: var(--tl-title-h, 2rem); bottom: 0; width: calc(var(--tl-title-h, 2rem) / 8); cursor: ew-resize; }
+.tl-resize-bottom:hover, .tl-resize-right:hover { background: var(--tl-resize-bg, #555); }
 .tl-resize-handle::after { content: "⌟"; position: absolute; right: 0.08em; bottom: -0.23em;
 	font-size: calc(var(--tl-title-h, 2rem) / 2); line-height: 1; color: var(--tl-fg, #ddd); }
 /* Horizontal is fully model-bounded (every tile satisfies x + w ≤ cols), so a horizontal

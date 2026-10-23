@@ -29,13 +29,14 @@ pub enum MinSize {
 
 impl MinSize {
 	/// Whole steps, ceil'd so a length floor never rounds *down* below the content it describes.
-	pub(crate) fn resolve(&self, step_w: f64, step_h: f64, rem_px: f64, title_h: f64) -> (u32, u32) {
+	/// `chrome`: the px a tile spends around its content on each axis.
+	pub(crate) fn resolve(&self, step_w: f64, step_h: f64, rem_px: f64, chrome: (f64, f64)) -> (u32, u32) {
 		let (w_px, h_px) = match *self {
 			MinSize::Steps { w, h } => return (w.0.max(1), h.0.max(1)),
 			MinSize::Rem { w, h } => (w * rem_px, h * rem_px),
 			MinSize::Px { w, h } => (w, h),
 		};
-		(((w_px / step_w).ceil() as u32).max(1), (((h_px + title_h) / step_h).ceil() as u32).max(1))
+		((((w_px + chrome.0) / step_w).ceil() as u32).max(1), (((h_px + chrome.1) / step_h).ceil() as u32).max(1))
 	}
 }
 

@@ -183,7 +183,7 @@ impl PackedState {
 				self.mins
 					.get(p)
 					.unwrap_or_else(|| panic!("hosted panel {p:?} has no declared min: the binding's panels list every panel the layout hosts"))
-					.resolve(sw, sh, self.rem_px, self.title_h())
+					.resolve(sw, sh, self.rem_px, (self.rail_w(), self.title_h() + self.footer_h()))
 			})
 			.fold((0, 0), |(w, h), (pw, ph)| (w.max(pw), h.max(ph)))
 	}
@@ -243,6 +243,16 @@ impl PackedState {
 	/// the `--tl-title-h` the binding emits, so they agree by construction.
 	pub fn title_h(&self) -> f64 {
 		self.cfg.title_h_rem * self.rem_px
+	}
+
+	/// The footer: the bottom grip's band, the corner's height. Content ends above it.
+	fn footer_h(&self) -> f64 {
+		self.title_h() / 2.0
+	}
+
+	/// The right grip's rail. Content ends left of it.
+	fn rail_w(&self) -> f64 {
+		self.title_h() / 8.0
 	}
 
 	/// Read access to the live grid — for a host rebuilding its panel list from a restored layout.
@@ -344,6 +354,9 @@ impl PackedState {
 	/// Pick up a whole tile by its header (empty area): arm a `Drag` and focus it. `start`/`grab`
 	/// are client px + the pointer's offset within the header.
 	pub fn press_tile(&mut self, gid: GroupId, start: (f64, f64), grab: (f64, f64)) {
+		if self.resize.is_some() {
+			return; // one gesture at a time: a drag would drop the cells the resize addresses
+		}
 		self.focus(gid);
 		let (w, h) = self.grid.cells.iter().find(|c| c.group.id == gid).map(|c| (c.w, c.h)).expect("press_tile: group exists");
 		self.drag = Some(Drag {
@@ -360,6 +373,9 @@ impl PackedState {
 
 	/// Tear a tab out of its group: arm a `Drag` and focus the origin.
 	pub fn press_tab(&mut self, panel: PanelId, from: GroupId, start: (f64, f64), grab: (f64, f64)) {
+		if self.resize.is_some() {
+			return; // one gesture at a time: a drag would drop the cells the resize addresses
+		}
 		self.focus(from);
 		let (w, h) = self.grid.cells.iter().find(|c| c.group.id == from).map(|c| (c.w, c.h)).expect("press_tab: group exists");
 		self.drag = Some(Drag {
@@ -454,21 +470,24 @@ impl PackedState {
 		self.drag = None;
 	}
 
-	/// Begin a corner-resize on tile `idx`: capture the pointer start + the tile's size then.
-	pub fn resize_start(&mut self, idx: usize, px: f64, py: f64) {
+	/// Begin a resize of tile `idx` from `grip`: capture the pointer start + the tile's size then.
+	pub fn resize_start(&mut self, idx: usize, grip: Grip, px: f64, py: f64) {
+		if self.drag.is_some() {
+			return; // one gesture at a time
+		}
 		let (w, h) = {
 			let c = &self.grid.cells[idx];
 			(c.w, c.h)
 		};
-		self.resize = Some(ResizeStart { idx, px, py, w, h });
+		self.resize = Some(ResizeStart { idx, grip, px, py, w, h });
 		self.grid.state = GridState::Resizing;
 	}
 
 	pub fn resize_move(&mut self, cursor: (f64, f64)) {
 		let Some(s) = self.resize else { return };
 		let (sw, sh) = self.step_px;
-		let dw = ((cursor.0 - s.px) / sw).round() as i64;
-		let dh = ((cursor.1 - s.py) / sh).round() as i64;
+		let dw = if s.grip == Grip::Bottom { 0 } else { ((cursor.0 - s.px) / sw).round() as i64 };
+		let dh = if s.grip == Grip::Right { 0 } else { ((cursor.1 - s.py) / sh).round() as i64 };
 		let nw = (s.w as i64 + dw).max(1) as u32;
 		let nh = (s.h as i64 + dh).max(1) as u32;
 		self.grid.resize(s.idx, nw, nh, self.cols);
@@ -528,8 +547,9 @@ impl PackedState {
 		self.drag.is_some()
 	}
 
-	pub fn resizing(&self) -> bool {
-		self.resize.is_some()
+	/// The grip of the resize in flight.
+	pub fn resizing(&self) -> Option<Grip> {
+		self.resize.map(|r| r.grip)
 	}
 
 	// ------- keyboard -------
@@ -764,7 +784,7 @@ impl PackedState {
 				let style = if hidden.contains(id) {
 					"display:none;".to_string()
 				} else {
-					slot_style(maximized, cell.group.id, cell.x, cell.y, cell.w, cell.h, id == &active, sw, sh, self.title_h())
+					slot_style(maximized, cell.group.id, cell.x, cell.y, cell.w, cell.h, id == &active, sw, sh, (self.title_h(), self.rail_w(), self.footer_h()))
 				};
 				map.insert(id.clone(), ContentSlot { style, group: cell.group.id });
 			}
@@ -886,6 +906,35 @@ pub struct Ghost {
 	pub w: f64,
 	pub h: f64,
 }
+/// Where a tile is taken to resize it: the corner sizes both axes, the right rail only the width,
+/// the footer only the height. Each sits in chrome, never over content.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Grip {
+	Corner,
+	Right,
+	Bottom,
+}
+impl Grip {
+	/// In paint order: the corner last, over the footer's end.
+	pub const ALL: [Self; 3] = [Self::Right, Self::Bottom, Self::Corner];
+
+	pub fn class(self) -> &'static str {
+		match self {
+			Self::Corner => "tl-resize-handle",
+			Self::Right => "tl-resize-right",
+			Self::Bottom => "tl-resize-bottom",
+		}
+	}
+
+	pub fn cursor(self) -> &'static str {
+		match self {
+			Self::Corner => "nwse-resize",
+			Self::Right => "ew-resize",
+			Self::Bottom => "ns-resize",
+		}
+	}
+}
+
 /// A cached layout that couldn't be used. Loud on purpose: a seed cache that silently wipes itself
 /// is indistinguishable from one that was never written.
 fn report(msg: &str) {
@@ -896,14 +945,15 @@ fn report(msg: &str) {
 }
 
 /// Inline style placing a panel's content over its tile's body from the grid rect — the same math
-/// the skeleton uses, so the two cannot drift apart. Inactive tabs stay mounted but `display:none`;
-/// a maximized group's active panel fills the container below the chrome, all others hidden.
-fn slot_style(maximized: Option<GroupId>, group: GroupId, x: u32, y: u32, w: u32, h: u32, active: bool, step_w: f64, step_h: f64, chrome_h: f64) -> String {
+/// the skeleton uses, so the two cannot drift apart. The body is the tile less its chrome: the title
+/// bar above, the right rail and the footer, where the grips are. Inactive tabs stay mounted but
+/// `display:none`; a maximized group's active panel fills the container's body, all others hidden.
+fn slot_style(maximized: Option<GroupId>, group: GroupId, x: u32, y: u32, w: u32, h: u32, active: bool, step_w: f64, step_h: f64, (chrome_h, rail_w, footer_h): (f64, f64, f64)) -> String {
 	if let Some(mg) = maximized {
 		if group != mg || !active {
 			return "display:none;".into();
 		}
-		return format!("display:block; left:0; top:{chrome_h}px; width:100%; height:calc(100% - {chrome_h}px);");
+		return format!("display:block; left:0; top:{chrome_h}px; width:calc(100% - {rail_w}px); height:calc(100% - {chrome_h}px - {footer_h}px);");
 	}
 	if !active {
 		return "display:none;".into();
@@ -912,7 +962,7 @@ fn slot_style(maximized: Option<GroupId>, group: GroupId, x: u32, y: u32, w: u32
 	// top/height bridge the two with `calc`.
 	let (left, top) = (x as f64 * step_w, y as f64 * step_h);
 	let (width, height) = (w as f64 * step_w, h as f64 * step_h);
-	format!("display:block; left:{left}px; top:calc({top}px + {chrome_h}px); width:{width}px; height:calc({height}px - {chrome_h}px);")
+	format!("display:block; left:{left}px; top:calc({top}px + {chrome_h}px); width:calc({width}px - {rail_w}px); height:calc({height}px - {chrome_h}px - {footer_h}px);")
 }
 
 /// The document's root font size in px. Only ever reached from a live measure of a mounted element,
@@ -956,11 +1006,12 @@ struct Drag {
 	target: Option<DropTarget>,
 }
 
-/// Corner-resize gesture captured at press: which tile, the pointer start, and the tile's size (in
+/// Resize gesture captured at press: which tile and grip, the pointer start, and the tile's size (in
 /// steps) then.
 #[derive(Clone, Copy)]
 struct ResizeStart {
 	idx: usize,
+	grip: Grip,
 	px: f64,
 	py: f64,
 	w: u32,

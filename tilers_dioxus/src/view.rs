@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use dioxus::{html::input_data::MouseButton, prelude::*};
-use tilers_core::{Band, CSS, Config, Group, GroupId, MinSize, PackedState, PanelId};
+use tilers_core::{Band, CSS, Config, Grip, Group, GroupId, MinSize, PackedState, PanelId};
 
 use crate::panel::DockPanel;
 
@@ -292,28 +292,30 @@ pub fn PackedArea(panels: Signal<Vec<DockPanel>>, on_band: Option<Callback<Packe
 							}
 							div { class: "tl-content-slot" }
 						}
-						div {
-							class: "tl-resize-handle",
-							onpointerdown: {
-								let idx = frame.idx;
-								move |e: PointerEvent| {
-									if e.trigger_button() != Some(MouseButton::Primary) {
-										return;
+						for grip in Grip::ALL {
+							div {
+								class: grip.class(),
+								onpointerdown: {
+									let idx = frame.idx;
+									move |e: PointerEvent| {
+										if e.trigger_button() != Some(MouseButton::Primary) {
+											return;
+										}
+										e.stop_propagation();
+										// Capture the pointer: moves keep streaming past the window bottom while the button is
+										// held, so the tile stretches below the fold (the root's `overflow-y: auto` then scrolls).
+										capture_pointer(&e);
+										let c = e.client_coordinates();
+										state.write().resize_start(idx, grip, c.x, c.y);
 									}
-									e.stop_propagation();
-									// Capture the pointer: moves keep streaming past the window bottom while the button is
-									// held, so the tile stretches below the fold (the root's `overflow-y: auto` then scrolls).
-									capture_pointer(&e);
+								},
+								onpointermove: move |e: PointerEvent| {
 									let c = e.client_coordinates();
-									state.write().resize_start(idx, c.x, c.y);
-								}
-							},
-							onpointermove: move |e: PointerEvent| {
-								let c = e.client_coordinates();
-								state.write().resize_move((c.x, c.y));
-							},
-							onpointerup: move |_| state.write().resize_end(),
-							onpointercancel: move |_| state.write().resize_end(),
+									state.write().resize_move((c.x, c.y));
+								},
+								onpointerup: move |_| state.write().resize_end(),
+								onpointercancel: move |_| state.write().resize_end(),
+							}
 						}
 					}
 				}
@@ -363,8 +365,8 @@ pub fn PackedArea(panels: Signal<Vec<DockPanel>>, on_band: Option<Callback<Packe
 			}
 			// Cursor-only scrim while resizing: the captured pointer routes moves to the handle; this just
 			// keeps the resize cursor steady over whatever the pointer crosses.
-			if resizing {
-				div { style: "position:fixed; inset:0; z-index:1000; cursor:nwse-resize;" }
+			if let Some(grip) = resizing {
+				div { style: "position:fixed; inset:0; z-index:1000; cursor:{grip.cursor()};" }
 			}
 			if let Some(g) = ghost {
 				div { class: "tl-ghost", style: "left:{g.left}px; top:{g.top}px; width:{g.w}px; height:{g.h}px;",

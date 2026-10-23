@@ -207,7 +207,7 @@ pub fn run(seed: u64, size: usize, verbose: bool, observe: &mut dyn FnMut(Option
 		}
 		// A resize left mid-gesture is a legitimate resting place (the user is still holding the grip),
 		// and the packed invariant is only claimed once it settles.
-		let checked = if world.state.resizing() {
+		let checked = if world.state.resizing().is_some() {
 			oracle::check_in_flight(&world.state)
 		} else {
 			world.settle();

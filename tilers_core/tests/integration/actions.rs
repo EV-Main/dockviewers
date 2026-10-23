@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 
 use tilers_core::{
-	Group, GroupId, PackedState, PanelId, Step,
+	Grip, Group, GroupId, PackedState, PanelId, Step,
 	keys::{Binding, Builtin, Chord, Command, Help, Hint, KeyInput, Keymap, Node},
 	model::packed::{DragSource, DropTarget, MinSize, PackedGrid},
 };
@@ -65,10 +65,11 @@ pub enum Action {
 		path: Vec<(f64, f64)>,
 		commit: bool,
 	},
-	/// Corner-grip resize; `commit: false` leaves the gesture in flight, which is a state a user can
-	/// genuinely rest in.
+	/// A resize from one of the tile's grips; `commit: false` leaves the gesture in flight, which is a
+	/// state a user can genuinely rest in.
 	Resize {
 		idx: usize,
+		grip: Grip,
 		start: (f64, f64),
 		path: Vec<(f64, f64)>,
 		commit: bool,
@@ -103,7 +104,7 @@ pub enum Aim {
 
 /// An unbound key or an editable target: either cancels whatever the sequence had opened.
 pub fn noisy(inputs: &[KeyInput]) -> bool {
-	inputs.iter().any(|k| k.editable || k.key == "j")
+	inputs.iter().any(|k| k.editable || k.code == "KeyJ") // by `code`: a Cyrillic layout reports it as `ж`
 }
 /// Apply `action`, returning the invariant it violated. Several invariants are only expressible
 /// *around* an action (a cancel is a no-op, an unarmed release only activates), so they live here
@@ -125,13 +126,19 @@ pub fn apply(action: &Action, world: &mut World, mid: &mut dyn FnMut(&World)) ->
 		}
 		Action::Focus { group } => world.state.focus(*group),
 		Action::Drag { grab, path, commit } => return drag(grab, path, *commit, world, mid),
-		Action::Resize { idx, start, path, commit } => {
+		Action::Resize { idx, grip, start, path, commit } => {
 			world.structural_edit();
-			world.state.resize_start(*idx, start.0, start.1);
+			let size = |w: &World| (w.state.grid().cells[*idx].w, w.state.grid().cells[*idx].h);
+			let (w0, h0) = size(world);
+			world.state.resize_start(*idx, *grip, start.0, start.1);
 			for p in path {
 				world.cursor = *p;
 				world.state.resize_move(*p);
 				oracle::check_in_flight(&world.state)?;
+				let (w, h) = size(world);
+				if (*grip == Grip::Right && h != h0) || (*grip == Grip::Bottom && w != w0) {
+					return Err(format!("the {grip:?} grip changed the other axis: {w0}x{h0} → {w}x{h}"));
+				}
 				mid(world);
 			}
 			if *commit {
@@ -162,7 +169,7 @@ pub fn generate(frng: &mut Frng, world: &World, weights: &[u32; N_KINDS]) -> Opt
 		avail.push(RESIZE);
 		avail.push(SET_MINS);
 		// A mid-resize grid is deliberately unsettled and `load` refits, so the two can't agree yet.
-		if !world.state.resizing() {
+		if world.state.resizing().is_none() {
 			avail.push(SAVE_LOAD);
 		}
 	}
@@ -231,16 +238,23 @@ pub fn generate(frng: &mut Frng, world: &World, weights: &[u32; N_KINDS]) -> Opt
 		RESIZE => {
 			let idx = frng.below(cells.len() as u32) as usize;
 			let c = &cells[idx];
-			// The grip is the tile's bottom-right corner, where `.tl-resize-handle` sits.
-			let start = (ox + (c.x + c.w) as f64 * sw, oy + (c.y + c.h) as f64 * sh);
+			let grip = Grip::ALL[frng.below(Grip::ALL.len() as u32) as usize];
+			// Where the grip sits on the tile: its corner, the middle of its right edge, or of its bottom.
+			let (r, b) = (ox + (c.x + c.w) as f64 * sw, oy + (c.y + c.h) as f64 * sh);
+			let start = match grip {
+				Grip::Corner => (r, b),
+				Grip::Right => (r, oy + (c.y as f64 + c.h as f64 / 2.0) * sh),
+				Grip::Bottom => (ox + (c.x as f64 + c.w as f64 / 2.0) * sw, b),
+			};
 			let to = aim(frng, world);
 			Action::Resize {
 				idx,
+				grip,
 				start,
 				path: path(frng, start, to, true),
 				// A gesture left in flight is legal; when one already is, always close it out so a run can't
 				// spend its whole tail unsettled.
-				commit: world.state.resizing() || frng.below(4) != 0,
+				commit: world.state.resizing().is_some() || frng.below(4) != 0,
 			}
 		}
 		KEY => {
@@ -495,7 +509,7 @@ fn key(inputs: &[KeyInput], aim: Aim, world: &mut World) -> Result<(), String> {
 		Aim::Builtin(_) => world.structural_edit(),
 	}
 	// A key mid-resize must leave the gesture addressing live cells.
-	if world.state.resizing() {
+	if world.state.resizing().is_some() {
 		world.cursor.0 += 7.0;
 		world.state.resize_move(world.cursor);
 		oracle::check_in_flight(&world.state)?;

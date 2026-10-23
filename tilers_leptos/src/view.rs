@@ -8,7 +8,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use leptos::prelude::*;
-use tilers_core::{Band, CSS, Config, Group, GroupId, MinSize, PackedState, PanelId, model::serial::LoadError};
+use tilers_core::{Band, CSS, Config, Grip, Group, GroupId, MinSize, PackedState, PanelId, model::serial::LoadError};
 
 use crate::panel::DockPanel;
 
@@ -291,11 +291,10 @@ pub fn PackedArea(
 
 			// Cursor-only scrim while resizing.
 			{move || {
-				state
-					.with(|s| s.resizing())
-					.then(|| {
-						view! { <div style="position:fixed; inset:0; z-index:1000; cursor:nwse-resize;"></div> }
-					})
+				state.with(|s| s.resizing()).map(|grip| {
+					let style = format!("position:fixed; inset:0; z-index:1000; cursor:{};", grip.cursor());
+					view! { <div style=style></div> }
+				})
 			}}
 
 			// Floating drag ghost.
@@ -391,7 +390,7 @@ fn panel_titles(panels: RwSignal<Vec<DockPanel>>) -> HashMap<PanelId, String> {
 }
 
 /// One tile of the skeleton. A shadow frame is a bare grey placeholder; a full frame renders its
-/// header (move-handle + tabs + actions), a body spacer, and the resize grip — each wired to a core
+/// header (move-handle + tabs + actions), a body spacer, and the resize grips — each wired to a core
 /// reducer method.
 fn render_frame(frame: tilers_core::Frame, state: RwSignal<PackedState, LocalStorage>, request_tab: Option<Arc<dyn Fn(GroupId) + Send + Sync>>) -> AnyView {
 	if frame.shadow {
@@ -485,22 +484,28 @@ fn render_frame(frame: tilers_core::Frame, state: RwSignal<PackedState, LocalSto
 				</div>
 				<div class="tl-content-slot"></div>
 			</div>
-			<div
-				class="tl-resize-handle"
-				on:pointerdown=move |e: web_sys::PointerEvent| {
-					if e.button() != 0 {
-						return;
+			{Grip::ALL
+				.map(|grip| {
+					view! {
+						<div
+							class=grip.class()
+							on:pointerdown=move |e: web_sys::PointerEvent| {
+								if e.button() != 0 {
+									return;
+								}
+								e.stop_propagation();
+								capture_pointer(&e);
+								state.update(|s| s.resize_start(idx, grip, e.client_x() as f64, e.client_y() as f64));
+							}
+							on:pointermove=move |e: web_sys::PointerEvent| {
+								state.update(|s| s.resize_move((e.client_x() as f64, e.client_y() as f64)));
+							}
+							on:pointerup=move |_| state.update(|s| s.resize_end())
+							on:pointercancel=move |_| state.update(|s| s.resize_end())
+						></div>
 					}
-					e.stop_propagation();
-					capture_pointer(&e);
-					state.update(|s| s.resize_start(idx, e.client_x() as f64, e.client_y() as f64));
-				}
-				on:pointermove=move |e: web_sys::PointerEvent| {
-					state.update(|s| s.resize_move((e.client_x() as f64, e.client_y() as f64)));
-				}
-				on:pointerup=move |_| state.update(|s| s.resize_end())
-				on:pointercancel=move |_| state.update(|s| s.resize_end())
-			></div>
+				})
+				.to_vec()}
 		</div>
 	}
 	.into_any()

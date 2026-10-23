@@ -4,7 +4,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use tilers_core::{
-	Config, Group, GroupId, MinSize, PackedState, PanelId, Saved, Step,
+	Config, Grip, Group, GroupId, MinSize, PackedState, PanelId, Saved, Step,
 	keys::{Binding, Chord, Command, KeyInput, KeyOutcome, Keymap, Node},
 	model::packed::PackedGrid,
 };
@@ -303,7 +303,7 @@ fn inspect_and_maximize_act_on_the_focused_pane() {
 #[test]
 fn undo_mid_resize_leaves_the_gesture_intact() {
 	let (mut s, _) = edited(Config::default());
-	s.resize_start(1, 500.0, 500.0);
+	s.resize_start(1, Grip::Corner, 500.0, 500.0);
 	s.resize_move((560.0, 540.0));
 	let mid = s.grid().clone();
 	for keys in ["Ctrl+z", "Alt+t u", "Alt+t Backspace"] {

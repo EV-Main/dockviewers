@@ -22,4 +22,4 @@ pub use model::{
 	Group, GroupId, PanelId,
 	packed::{MinSize, PackedGrid, Step},
 };
-pub use state::{ContentSlot, Frame, Ghost, PackedState};
+pub use state::{ContentSlot, Frame, Ghost, Grip, PackedState};
