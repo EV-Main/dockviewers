@@ -16,10 +16,10 @@ pub mod state;
 
 mod css;
 mod persist;
-pub use config::{Band, Breakpoint, Config, Saved};
+pub use config::{Band, Breakpoint, Config};
 pub use css::CSS;
 pub use model::{
 	Group, GroupId, PanelId,
 	packed::{MinSize, PackedGrid, Step},
 };
-pub use state::{ContentSlot, Frame, Ghost, Grip, PackedState};
+pub use state::{ContentSlot, Frame, Ghost, Grip, Notice, PackedState};

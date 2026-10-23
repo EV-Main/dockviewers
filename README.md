@@ -65,7 +65,7 @@ Runnable demo: `dx serve --example insilico --package tilers_dioxus --platform w
 
 A cached payload that is corrupt, from a future schema, or empty counts as a miss and says so on the console — never a silent reset. Persistence is wasm-only (a no-op natively, so every band reports a miss).
 
-**Publishing a default.** The framework never talks to a server. `leader s p` hands `Config::on_save` a `Saved::Published { band, json }` and does nothing else; persist it wherever you like (behind your own authorization) to become the default fresh clients `load` in `on_band`. `leader s s` fires the same hook with `Saved::Cached { band }`, for feedback — the write already happened.
+**Publishing a default.** The framework never talks to a server. `leader s p` hands `Config::on_publish` the band and its layout JSON, after the keydown; persist it wherever you like (behind your own authorization) to become the default fresh clients `load` in `on_band`, and say how it went with `api.notify(text)`, the dock's toast. `leader s s` toasts on its own.
 
 **Scripting** — `PackedApi` arrives through `on_band`; stash it in a signal to drive the dock from elsewhere. Every method is a read/write of the one state cell:
 
@@ -77,10 +77,11 @@ api.close_active(gid);
 api.resize(idx, new_w, new_h);
 api.reset();                               // wipe the layout back to empty
 let json = api.save(); api.load(&json)?;   // `load` errors on corrupt/future JSON
+api.notify(text);                          // the dock's toast
 api.cols(); api.band(); api.tab_ids();
 ```
 
-**Keybinds** (`Config::keymap`). The framework claims only `Keymap::root` and one leader, `Alt+t` (`Ctrl+t` on macOS); everything else waits behind the leader, where a which-key popup lists the next keys after `--tl-hint-delay` (150ms). Root holds `Ctrl+z`/`Ctrl+y`/`Ctrl+Shift+z` (`Cmd` on macOS) for undo/redo; aimed at a text field they stay the browser's text undo. Behind the leader: `u`/`U` undo/redo, `Backspace` closes the focused pane, `f` maximizes it, `d` inspects it, `?` lists the whole keymap (as does each tile's `?` button), and `s s`/`s p` cache/publish the layout (unbound without `storage_key`/`on_save`). Rebinding the leader is `Keymap { leader: Chord { key: "g", alt: true, .. }.into(), ..Default::default() }`; dropping it for flat binds is `k.root.append(&mut k.scope)`. Your own commands are `Node::Run(Command::Custom { label, run })` at any depth, `Node::Scope` nests.
+**Keybinds** (`Config::keymap`). The framework claims only `Keymap::root` and one leader, `Alt+t` (`Ctrl+t` on macOS); everything else waits behind the leader, where a which-key popup lists the next keys after `--tl-hint-delay` (150ms). Root holds `Ctrl+z`/`Ctrl+y`/`Ctrl+Shift+z` (`Cmd` on macOS) for undo/redo; aimed at a text field they stay the browser's text undo. Behind the leader: `u`/`U` undo/redo, `Backspace` closes the focused pane, `f` maximizes it, `d` inspects it, `?` lists the whole keymap (as does each tile's `?` button), and `s s`/`s p` cache/publish the layout (unbound without `storage_key`/`on_publish`). Rebinding the leader is `Keymap { leader: Chord { key: "g", alt: true, .. }.into(), ..Default::default() }`; dropping it for flat binds is `k.root.append(&mut k.scope)`. Your own commands are `Node::Run(Command::Custom { label, run })` at any depth, `Node::Scope` nests.
 
 **Grid** — `Config::steps` (default 64) is the desktop column count, scaled down per band so the *physical* step stays ~constant and tiles reflow instead of shrinking; `rows` (default 36) is fixed.
 

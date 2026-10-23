@@ -93,6 +93,11 @@ impl PackedApi {
 		s.set_mins(mins);
 		s.load(json)
 	}
+
+	/// Say `text` in the dock's toast: a [`Config::on_publish`] host reporting how its publish went.
+	pub fn notify(&mut self, text: String) {
+		self.state.write().notify(text);
+	}
 }
 
 /// Root of the packed layout. Owns the `Signal<PackedState>` (root-scope, so the [`PackedApi`] it
@@ -184,6 +189,7 @@ pub fn PackedArea(panels: Signal<Vec<DockPanel>>, on_band: Option<Callback<Packe
 	let inspect = state.read().inspect();
 	let help = state.read().help(&titles);
 	let hint = state.read().hint();
+	let notice = state.read().notice();
 	let dragging = state.read().dragging();
 	let resizing = state.read().resizing();
 	let panel_list = panels.read().clone();
@@ -372,6 +378,9 @@ pub fn PackedArea(panels: Signal<Vec<DockPanel>>, on_band: Option<Callback<Packe
 				div { class: "tl-ghost", style: "left:{g.left}px; top:{g.top}px; width:{g.w}px; height:{g.h}px;",
 					div { class: "tl-header", div { class: "tl-tab tl-active", "{g.title}" } }
 				}
+			}
+			if let Some(n) = notice {
+				div { key: "{n.seq}", class: "tl-notice", "{n.text}" }
 			}
 			// Which-key popup for a pending chord. `.tl-hint` delays its own reveal in CSS.
 			if let Some(h) = hint {

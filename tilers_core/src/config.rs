@@ -5,16 +5,6 @@ use std::rc::Rc;
 
 use crate::keys::Keymap;
 
-/// What a save command produced, handed to [`Config::on_save`].
-pub enum Saved {
-	/// [`Builtin::Cache`](crate::keys::Builtin::Cache): already written to `localStorage` under
-	/// `band`'s key. Feedback only.
-	Cached { band: Band },
-	/// [`Builtin::Publish`](crate::keys::Builtin::Publish): the framework does nothing with this; the
-	/// host persists `json` wherever it wants, to become the default fresh clients start from.
-	Published { band: Band, json: String },
-}
-
 #[derive(Clone, Default)]
 pub struct Config {
 	pub keymap: Keymap,
@@ -31,9 +21,10 @@ pub struct Config {
 	/// `localStorage` namespace for the built-in seed cache; the [`Band`] is appended. `None` ⇒ no
 	/// client cache at all, and every band entry reports a miss for the host to seed.
 	pub storage_key: Option<String> = None,
-	/// Fires after a save command. `None` ⇒ [`Publish`](crate::keys::Builtin::Publish) is unbound,
-	/// since the framework has nowhere to put a published layout on its own.
-	pub on_save: Option<Rc<dyn Fn(Saved)>> = None,
+	/// [`Publish`](crate::keys::Builtin::Publish): the host persists the band's layout JSON wherever it
+	/// wants, to become the default fresh clients start from, and reports the outcome with `notify`.
+	/// `None` ⇒ unbound, since the framework has nowhere to put a published layout on its own.
+	pub on_publish: Option<Rc<dyn Fn(Band, String)>> = None,
 	/// Height of a tile's title bar, in `rem` — so it tracks the reader's font size (the bar has to
 	/// fit its tab text) rather than the viewport, which the grid already handles via [`Breakpoint`].
 	/// Emitted as `--tl-title-h` on the root and resolved to px for the content overlay's offset.
@@ -42,14 +33,14 @@ pub struct Config {
 }
 
 /// Config never changes at runtime; a binding compares it only to decide whether to re-seed.
-/// Closures have no identity, so `on_save` compares by presence.
+/// Closures have no identity, so `on_publish` compares by presence.
 impl PartialEq for Config {
 	fn eq(&self, other: &Self) -> bool {
 		self.keymap == other.keymap
 			&& self.steps == other.steps
 			&& self.row_h_rem == other.row_h_rem
 			&& self.storage_key == other.storage_key
-			&& self.on_save.is_some() == other.on_save.is_some()
+			&& self.on_publish.is_some() == other.on_publish.is_some()
 			&& self.title_h_rem == other.title_h_rem
 	}
 }

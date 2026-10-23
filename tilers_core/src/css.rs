@@ -70,6 +70,12 @@ pub const CSS: &str = r#"
 @keyframes tl-hint-in { from { visibility: hidden; } to { visibility: visible; } }
 .tl-hint-prefix { font-family: ui-monospace, monospace; opacity: 0.6; margin-bottom: 6px; }
 .tl-hint-row { display: flex; gap: 12px; padding: 2px 0; }
+/* A toast in the hint's corner, where the chord that caused it was just shown; it ends hidden. */
+.tl-notice { position: absolute; right: 12px; bottom: 12px; z-index: 1075; padding: 10px 14px;
+	pointer-events: none; background: var(--tl-group-bg, #1e1e1e); border: 1px solid var(--tl-accent, #63e9cd);
+	border-radius: 6px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+	animation: tl-notice-out 400ms var(--tl-notice-hold, 2500ms) both; }
+@keyframes tl-notice-out { to { opacity: 0; visibility: hidden; } }
 /* The full keymap: a dim scrim over the whole root with a centered card. */
 .tl-help-scrim { position: absolute; inset: 0; z-index: 1100; display: flex; align-items: center;
 	justify-content: center; background: rgba(0, 0, 0, 0.45); cursor: pointer; }

@@ -86,7 +86,7 @@ pub enum Builtin {
 	Help,
 	/// Write this band's layout to `localStorage`. Unbound without [`Config::storage_key`](crate::Config::storage_key).
 	Cache,
-	/// Hand this band's layout to [`Config::on_save`](crate::Config::on_save), which unbinds it when `None`.
+	/// Hand this band's layout to [`Config::on_publish`](crate::Config::on_publish), which unbinds it when `None`.
 	Publish,
 }
 

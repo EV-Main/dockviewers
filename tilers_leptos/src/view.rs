@@ -94,6 +94,11 @@ impl PackedApi {
 			})
 			.expect("state signal alive")
 	}
+
+	/// Say `text` in the dock's toast: a [`Config::on_publish`] host reporting how its publish went.
+	pub fn notify(&self, text: String) {
+		self.state.update(|s| s.notify(text));
+	}
 }
 
 /// Root of the packed layout. Owns the thread-local `RwSignal<PackedState>`, installs the window
@@ -321,6 +326,12 @@ pub fn PackedArea(
 						}
 					})
 			}}
+
+			// A memo, so only a new notice re-renders (and so remounts) it.
+			{
+				let notice = Memo::new(move |_| state.with(|s| s.notice()));
+				move || notice.get().map(|n| view! { <div class="tl-notice">{n.text}</div> })
+			}
 
 			// Which-key popup for a pending chord. `.tl-hint` delays its own reveal in CSS.
 			{move || {

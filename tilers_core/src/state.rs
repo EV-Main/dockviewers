@@ -15,7 +15,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::{
-	config::{Band, Breakpoint, Config, Saved},
+	config::{Band, Breakpoint, Config},
 	keys::{Builtin, Command, Help, Hint, KeyInput, KeyOutcome, Step, Trie},
 	model::{
 		Group, GroupId, PanelId,
@@ -34,7 +34,7 @@ const DRAG_THRESHOLD: f64 = 4.0;
 /// Everything the packed layout needs to render and mutate itself, on one struct. The engine's
 /// grid plus the live view geometry (`cols`/`step_px`/`breakpoint`/`root_*`, set by the measure),
 /// the in-flight gestures (`drag`/`resize`), the keyboard-driven pane state
-/// (`focused`/`maximized`/`help`/`popups`/`pending`), the undo history, the `shown` band latch, and
+/// (`focused`/`maximized`/`help`/`popups`/`pending`/`notice`), the undo history, the `shown` band latch, and
 /// the host `cfg`.
 pub struct PackedState {
 	grid: PackedGrid,
@@ -62,6 +62,8 @@ pub struct PackedState {
 	keys: Trie,
 	/// The path into `keys` a chord has opened; empty when none is.
 	pending: Vec<usize>,
+	notice: Option<Notice>,
+	notices: u32,
 	undo: UndoHistory,
 	/// The [`Band`] whose layout is currently on screen — `None` until the first real measure, and
 	/// reset to the new band by [`take_band`](PackedState::take_band) on every crossing.
@@ -85,7 +87,7 @@ impl PackedState {
 		let mac = false;
 		let keys = Trie::new(&cfg.keymap, mac, |b| match b {
 			Builtin::Cache => cfg.storage_key.is_some(),
-			Builtin::Publish => cfg.on_save.is_some(),
+			Builtin::Publish => cfg.on_publish.is_some(),
 			_ => true,
 		});
 		Self {
@@ -105,6 +107,8 @@ impl PackedState {
 			popups: HashSet::new(),
 			keys,
 			pending: Vec::new(),
+			notice: None,
+			notices: 0,
 			undo: UndoHistory::default(),
 			shown: None,
 			#[cfg(target_arch = "wasm32")]
@@ -571,6 +575,7 @@ impl PackedState {
 		}
 		let (cmd, seq) = match self.keys.step(&mut self.pending, &k, &key) {
 			Step::Opened => {
+				self.notice = None; // the hint takes its corner
 				return KeyOutcome {
 					prevent_default: true,
 					changed: true,
@@ -642,17 +647,21 @@ impl PackedState {
 				let band = self.band();
 				let k = self.cfg.storage_key.as_ref().expect("Cache resolves only with a storage key");
 				persist::write(&format!("{k}-{band}"), &self.save());
-				if let Some(hook) = self.cfg.on_save.clone() {
-					hook(Saved::Cached { band });
-				}
+				self.notify(format!("Layout cached in this browser ({band})"));
 				true
 			}
 			Builtin::Publish => {
-				let hook = self.cfg.on_save.clone().expect("Publish resolves only with on_save");
-				hook(Saved::Published {
-					band: self.band(),
-					json: self.save(),
-				});
+				let hook = self.cfg.on_publish.clone().expect("Publish resolves only with on_publish");
+				let (band, json) = (self.band(), self.save());
+				// after this keydown releases the state, so the hook may `notify` back into it
+				#[cfg(target_arch = "wasm32")]
+				{
+					use wasm_bindgen::{JsCast, closure::Closure};
+					let run = Closure::once_into_js(move || hook(band, json));
+					web_sys::window().expect("a browser window").queue_microtask(run.unchecked_ref());
+				}
+				#[cfg(not(target_arch = "wasm32"))]
+				hook(band, json);
 				true
 			}
 		}
@@ -861,6 +870,24 @@ impl PackedState {
 	pub fn hint(&self) -> Option<Hint> {
 		self.keys.hint(&self.pending)
 	}
+
+	/// Say `text` in the dock's toast; the latest replaces any before it.
+	pub fn notify(&mut self, text: String) {
+		self.notices += 1;
+		self.notice = Some(Notice { seq: self.notices, text });
+	}
+
+	/// The last [`notify`](Self::notify). It stays set: its fade-out is presentation, in CSS.
+	pub fn notice(&self) -> Option<Notice> {
+		self.notice.clone()
+	}
+}
+
+/// A toast. `seq` keys its element, so a repeat remounts it and replays the fade.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Notice {
+	pub seq: u32,
+	pub text: String,
 }
 
 /// One tile in the skeleton view-model: its group id, position style, the drop-feedback flags

@@ -3,7 +3,8 @@ import { expect, test } from '@playwright/test'
 // The framework's built-in client-side layout cache, exercised through the insilico example (which
 // carries zero persistence code of its own — that is the point). `Alt+t s s` writes the live layout to
 // `localStorage` under `<storage_key>-<band>`; a reload restores it instead of re-seeding; a
-// viewport change into another band uses a different key; `Alt+t s p` only calls the host hook.
+// viewport change into another band uses a different key; `Alt+t s p` only calls the host hook. Both
+// say what happened in the dock's own `.tl-notice`.
 
 const KEY = 'insilico-layout'
 
@@ -34,6 +35,7 @@ test('leader s s caches the current band under its own key', async ({ page }) =>
 	const json = await cache(page, 'xl')
 	expect(json, 'leader s s must write the xl entry').not.toBe(null)
 	expect(JSON.parse(json), 'the cached payload is the versioned layout').toHaveProperty('grid')
+	await expect(page.locator('.tl-notice'), 'caching says so without any host code').toContainText('xl')
 })
 
 test('a cached layout survives a reload', async ({ page }) => {
@@ -68,8 +70,7 @@ test('each band caches under its own key', async ({ page }) => {
 
 test('leader s p calls the host hook without touching the cache', async ({ page }) => {
 	const before = await keys(page)
-	const dialog = new Promise((resolve) => page.once('dialog', (d) => resolve(d.message()) || d.dismiss()))
 	await chord(page, ...PUBLISH)
-	expect(await dialog, "the example's publish hook alerts").toContain('publish')
+	await expect(page.locator('.tl-notice'), "the example's publish hook reports through the dock").toContainText('publish')
 	expect(await keys(page), 'publish must not write localStorage').toEqual(before)
 })

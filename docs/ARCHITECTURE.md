@@ -78,10 +78,11 @@ what is on screen — i.e. once per band entry. On that edge it resets the grid,
 invokes the host's `on_band`, which sees `api.restored()` and either re-attaches content
 to the restored tiles or lays out a fresh spread.
 
-The framework caches on `leader s s` and **never talks to a server**. `leader s p` hands the
-JSON to `Config::on_save` and does nothing else; a host that wants a site-wide default
-persists it itself, behind its own authorization, and `load`s it in `on_band` when the
-cache missed. Precedence is therefore: client cache → host default → host built-in seed.
+The framework caches on `leader s s`, says so in its toast (`notice`), and **never talks to a
+server**. `leader s p` hands the JSON to `Config::on_publish` and does nothing else; a host that
+wants a site-wide default persists it itself, behind its own authorization, reports the outcome
+through the same toast (`notify`), and `load`s it in `on_band` when the cache missed. The hook runs
+in a microtask after the keydown, so it may `notify` synchronously. Precedence is therefore: client cache → host default → host built-in seed.
 
 ## Invariants
 

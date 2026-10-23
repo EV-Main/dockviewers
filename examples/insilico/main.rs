@@ -27,7 +27,7 @@ use std::rc::Rc;
 
 use dioxus::prelude::*;
 use market::{Market, xorshift};
-use tilers_dioxus::{Config, DockPanel, Group, GroupId, MinSize, PackedApi, PackedArea, PanelId, Saved, Step};
+use tilers_dioxus::{Config, DockPanel, Group, GroupId, MinSize, PackedApi, PackedArea, PanelId, Step};
 
 /// The catalog of insilico-style windows. Each declares its title, default size, and a per-type
 /// [`MinSize`] (in whichever unit reads naturally).
@@ -178,21 +178,16 @@ fn seed_fresh(panels: Signal<Vec<DockPanel>>, counter: Signal<u64>, a: PackedApi
 }
 
 /// The whole persistence story: name a `localStorage` namespace and the framework caches this
-/// browser's layout per band on `Alt+S`, restoring it before `on_band` ever runs. `on_save` is
-/// feedback only — except for `Published`, which is where a host with a server would `fetch` the
-/// JSON up as the default *other* visitors land on. This example just says what it would send.
-fn insilico_config() -> Config {
+/// browser's layout per band on `Alt+t s s`, restoring it before `on_band` ever runs, and says so.
+/// `on_publish` is where a host with a server would `fetch` the JSON up as the default *other*
+/// visitors land on. This example just says what it would send.
+fn insilico_config(api: Signal<Option<PackedApi>>) -> Config {
 	Config {
 		storage_key: Some("insilico-layout".into()),
-		on_save: Some(Rc::new(|saved| {
-			let msg = match saved {
-				Saved::Cached { band } => format!("Alt+S: cached the {band} layout in this browser"),
-				Saved::Published { band, json } => format!("Alt+Shift+S: would publish {} bytes as the {band} default", json.len()),
-			};
-			#[cfg(target_arch = "wasm32")]
-			web_sys::window().expect("a browser window").alert_with_message(&msg).expect("alert");
-			#[cfg(not(target_arch = "wasm32"))]
-			println!("{msg}");
+		on_publish: Some(Rc::new(move |band, json: String| {
+			api()
+				.expect("publishing needs a dock")
+				.notify(format!("would publish {} bytes as the {band} default", json.len()));
 		})),
 		..Default::default()
 	}
@@ -251,7 +246,7 @@ fn app() -> Element {
 				}
 			}
 			div { style: "flex:1 1 auto; position:relative;",
-				PackedArea { panels, on_band: Some(on_band), config: Some(insilico_config()) }
+				PackedArea { panels, on_band: Some(on_band), config: Some(insilico_config(api)) }
 			}
 			if let Some(gid) = pending() {
 				CatalogPopup { gid, panels, counter, api, pending }

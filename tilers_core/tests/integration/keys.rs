@@ -4,7 +4,7 @@
 use std::{cell::RefCell, collections::HashMap, rc::Rc};
 
 use tilers_core::{
-	Config, Grip, Group, GroupId, MinSize, PackedState, PanelId, Saved, Step,
+	Config, Grip, Group, GroupId, MinSize, PackedState, PanelId, Step,
 	keys::{Binding, Chord, Command, KeyInput, KeyOutcome, Keymap, Node},
 	model::packed::PackedGrid,
 };
@@ -199,24 +199,32 @@ fn layout_scope_tracks_what_the_host_wired() {
 	let (mut s, _) = edited(cached);
 	let rows = help_rows(&mut s);
 	assert!(rows.iter().any(|(k, _)| k == "Alt+t s s"), "{rows:?}");
-	assert!(!rows.iter().any(|(k, _)| k == "Alt+t s p"), "publish needs `on_save`: {rows:?}");
+	assert!(!rows.iter().any(|(k, _)| k == "Alt+t s p"), "publish needs `on_publish`: {rows:?}");
 	let outs = press(&mut s, seq("Alt+t s p"));
 	assert!(!outs[2].prevent_default, "an unbound publish is inert");
+	assert!(s.notice().is_none(), "an unbound publish says nothing");
+	press(&mut s, seq("Alt+t s s"));
+	let cached = s.notice().expect("caching says so without any host code");
+	assert!(cached.text.contains(&s.band().to_string()), "{cached:?}");
+	press(&mut s, seq("Alt+t"));
+	assert!(s.notice().is_none(), "an opened chord's hint takes the notice's corner");
+	press(&mut s, seq("s s"));
+	assert_ne!(s.notice().expect("cached again").seq, cached.seq, "a repeat is a new notice, so it shows again");
 
 	let got = Rc::new(RefCell::new(Vec::new()));
 	let sink = got.clone();
 	let hooked = Config {
-		on_save: Some(Rc::new(move |saved| sink.borrow_mut().push(saved))),
+		on_publish: Some(Rc::new(move |band, json| sink.borrow_mut().push((band, json)))),
 		..Default::default()
 	};
 	let (mut s, _) = edited(hooked);
 	assert!(press(&mut s, seq("Alt+t s p"))[2].prevent_default);
 	match got.borrow().as_slice() {
-		[Saved::Published { json, .. }] => assert_eq!(json, &s.save()),
+		[(band, json)] => assert_eq!((*band, json), (s.band(), &s.save())),
 		_ => panic!("publish hands exactly one layout to the host"),
 	}
 	assert!(!press(&mut s, seq("Alt+t s s"))[2].prevent_default, "no storage key: caching would write nothing");
-	assert_eq!(got.borrow().len(), 1, "an unbound cache reports nothing to the hook");
+	assert!(s.notice().is_none(), "the framework says nothing of a publish: its outcome is the host's");
 }
 
 #[test]
@@ -269,7 +277,7 @@ fn help_lists_every_bound_leaf_once() {
 	let k = Keymap::default();
 	let cfg = Config {
 		storage_key: Some("t".into()),
-		on_save: Some(Rc::new(|_| {})),
+		on_publish: Some(Rc::new(|_, _| {})),
 		..Default::default()
 	};
 	let (mut s, _) = edited(cfg);
