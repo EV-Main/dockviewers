@@ -16,6 +16,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::{
 	config::{Band, Breakpoint, Config, Saved},
+	keys::{Builtin, Command, Help, Hint, KeyInput, KeyOutcome, Step, Trie},
 	model::{
 		Group, GroupId, PanelId,
 		packed::{DragSource, DropTarget, GridState, MinSize, PackedGrid},
@@ -33,8 +34,8 @@ const DRAG_THRESHOLD: f64 = 4.0;
 /// Everything the packed layout needs to render and mutate itself, on one struct. The engine's
 /// grid plus the live view geometry (`cols`/`step_px`/`breakpoint`/`root_*`, set by the measure),
 /// the in-flight gestures (`drag`/`resize`), the keyboard-driven pane state
-/// (`focused`/`maximized`/`help`/`popups`), the undo history, the `shown` band latch, and the host
-/// `cfg`.
+/// (`focused`/`maximized`/`help`/`popups`/`pending`), the undo history, the `shown` band latch, and
+/// the host `cfg`.
 pub struct PackedState {
 	grid: PackedGrid,
 	cols: u32,
@@ -57,6 +58,10 @@ pub struct PackedState {
 	maximized: Option<GroupId>,
 	help: bool,
 	popups: HashSet<GroupId>,
+	/// `cfg.keymap` resolved for this platform and config.
+	keys: Trie,
+	/// The path into `keys` a chord has opened; empty when none is.
+	pending: Vec<usize>,
 	undo: UndoHistory,
 	/// The [`Band`] whose layout is currently on screen — `None` until the first real measure, and
 	/// reset to the new band by [`take_band`](PackedState::take_band) on every crossing.
@@ -70,6 +75,19 @@ pub struct PackedState {
 impl PackedState {
 	pub fn new(cfg: Config) -> Self {
 		let cols = cfg.steps.max(1);
+		#[cfg(target_arch = "wasm32")]
+		let mac = {
+			let p = web_sys::window().expect("a browser window").navigator().platform().expect("navigator.platform never throws");
+			// iPadOS composes on Option too, and reports `iPad`/`MacIntel`.
+			p.starts_with("Mac") || p.starts_with("iP")
+		};
+		#[cfg(not(target_arch = "wasm32"))]
+		let mac = false;
+		let keys = Trie::new(&cfg.keymap, mac, |b| match b {
+			Builtin::Cache => cfg.storage_key.is_some(),
+			Builtin::Publish => cfg.on_save.is_some(),
+			_ => true,
+		});
 		Self {
 			grid: PackedGrid::default(),
 			cols,
@@ -85,6 +103,8 @@ impl PackedState {
 			maximized: None,
 			help: false,
 			popups: HashSet::new(),
+			keys,
+			pending: Vec::new(),
 			undo: UndoHistory::default(),
 			shown: None,
 			#[cfg(target_arch = "wasm32")]
@@ -319,7 +339,7 @@ impl PackedState {
 	/// Pick up a whole tile by its header (empty area): arm a `Drag` and focus it. `start`/`grab`
 	/// are client px + the pointer's offset within the header.
 	pub fn press_tile(&mut self, gid: GroupId, start: (f64, f64), grab: (f64, f64)) {
-		self.focused = Some(gid);
+		self.focus(gid);
 		let (w, h) = self.grid.cells.iter().find(|c| c.group.id == gid).map(|c| (c.w, c.h)).expect("press_tile: group exists");
 		self.drag = Some(Drag {
 			source: DragSource::Tile(gid),
@@ -335,7 +355,7 @@ impl PackedState {
 
 	/// Tear a tab out of its group: arm a `Drag` and focus the origin.
 	pub fn press_tab(&mut self, panel: PanelId, from: GroupId, start: (f64, f64), grab: (f64, f64)) {
-		self.focused = Some(from);
+		self.focus(from);
 		let (w, h) = self.grid.cells.iter().find(|c| c.group.id == from).map(|c| (c.w, c.h)).expect("press_tab: group exists");
 		self.drag = Some(Drag {
 			source: DragSource::Tab { panel, from },
@@ -457,9 +477,11 @@ impl PackedState {
 		self.grid.state = GridState::Settled;
 	}
 
-	/// A body/tab press focuses the pane so keybinds act on whichever pane you last touched.
+	/// A body/tab press focuses the pane so keybinds act on whichever pane you last touched. A press
+	/// is the user moving on, so it drops a pending chord.
 	pub fn focus(&mut self, gid: GroupId) {
 		self.focused = Some(gid);
+		self.pending.clear();
 	}
 
 	/// `focused`/`maximized` filtered to a group the layout still holds. They're set by a press and
@@ -473,15 +495,26 @@ impl PackedState {
 	/// Walk the undo history by `dir` and settle whatever comes back into the live geometry. A
 	/// snapshot may have been taken at another step, so it needs the same refloor a
 	/// [`load`](Self::load)ed layout does — restoring one verbatim would spill past `cols` or its floors.
-	fn restore(&mut self, dir: i32) {
-		if let Some(g) = self.undo.step(dir) {
-			self.grid = g;
-			self.refloor();
-		}
+	fn restore(&mut self, dir: i32) -> bool {
+		let Some(g) = self.undo.step(dir) else { return false };
+		self.grid = g;
+		self.refloor();
+		true
 	}
 
 	pub fn close_help(&mut self) {
 		self.help = false;
+	}
+
+	/// The per-tile `?`: the help, aimed at that pane.
+	pub fn open_help(&mut self, gid: GroupId) {
+		self.focus(gid);
+		self.help = true;
+	}
+
+	/// The window lost focus: the keys that would finish the chord go elsewhere.
+	pub fn cancel_chord(&mut self) {
+		self.pending.clear();
 	}
 
 	// ------- view flags -------
@@ -494,128 +527,120 @@ impl PackedState {
 		self.resize.is_some()
 	}
 
-	pub fn help_open(&self) -> bool {
-		self.help
-	}
-
 	// ------- keyboard -------
 
-	/// Handle a keydown, already stripped to primitives by the binding (the binding also drops keys
-	/// aimed at an editable field before calling). `cursor`/`scroll_y` position the `d` inspect
-	/// hit-test. Returns whether the binding should `preventDefault`.
-	pub fn on_key(&mut self, key: &str, alt: bool, ctrl: bool, cursor: (f64, f64), scroll_y: f64) -> KeyOutcome {
-		// Logs the moment a chord is recognized (a configured bind matched), before the action runs —
-		// so a console with this line but no visible effect means the action was a no-op, not that the
-		// keypress went unseen (the likeliest "works in Chrome, dead in Firefox" failure). The console is
-		// the only web-specific thing in here; natively (the fuzzer drives this) it's a no-op.
-		let recognized = |action: &str| {
-			debug_assert!(!action.is_empty(), "every recognized chord names its action");
-			#[cfg(target_arch = "wasm32")]
-			web_sys::console::debug_1(&format!("tilers keybind: {key:?} (alt={alt}, ctrl={ctrl}) → {action}").into());
+	/// One keydown. Esc is hard-wired: it closes the help, the inspect popups and a pending chord.
+	pub fn on_key(&mut self, k: KeyInput) -> KeyOutcome {
+		let was_pending = !self.pending.is_empty();
+		if k.editable {
+			self.pending.clear();
+			return KeyOutcome {
+				prevent_default: false,
+				changed: was_pending,
+			};
+		}
+		let Some(key) = k.normalized() else {
+			return KeyOutcome {
+				prevent_default: false,
+				changed: false,
+			};
 		};
-		let prevent = |b: bool| KeyOutcome { prevent_default: b };
-		let kb = self.cfg.keybinds;
-		// Esc always dismisses the hint and any open inspect popups, regardless of the binds.
-		if key == "Escape" && (self.help || !self.popups.is_empty()) {
-			recognized("Escape");
+		if key == "Escape" && (self.help || !self.popups.is_empty() || was_pending) {
 			self.help = false;
 			self.popups.clear();
-			return prevent(true);
+			self.pending.clear();
+			return KeyOutcome {
+				prevent_default: true,
+				changed: true,
+			};
 		}
-		if kb.undo.matches(key, alt, ctrl) {
-			recognized("undo");
-			self.restore(-1);
-			return prevent(true);
-		}
-		if kb.redo.matches(key, alt, ctrl) {
-			recognized("redo");
-			self.restore(1);
-			return prevent(true);
-		}
-		if kb.close.matches(key, alt, ctrl) {
-			recognized("close");
-			if let Some(g) = self.live(self.focused) {
-				self.close_active(g);
-				return prevent(true);
+		let (cmd, seq) = match self.keys.step(&mut self.pending, &k, &key) {
+			Step::Opened => {
+				return KeyOutcome {
+					prevent_default: true,
+					changed: true,
+				};
 			}
-			return prevent(false);
-		}
-		if kb.maximize.matches(key, alt, ctrl) {
-			recognized("maximize");
-			if let Some(f) = self.live(self.focused) {
-				self.maximized = if self.maximized == Some(f) { None } else { Some(f) };
-				return prevent(true);
+			Step::Miss => {
+				return KeyOutcome {
+					prevent_default: false,
+					changed: was_pending,
+				};
 			}
-			return prevent(false);
+			Step::Run(cmd, seq) => (cmd, seq),
+		};
+		// Logged on recognition, before the command runs: a console line with no visible effect means
+		// the command had nothing to act on, not that the keydown went unseen.
+		#[cfg(target_arch = "wasm32")]
+		web_sys::console::debug_1(&format!("tilers keybind: {seq} → {}", cmd.label()).into());
+		#[cfg(not(target_arch = "wasm32"))]
+		let _ = seq; // the console is the only consumer
+		let acted = self.run(cmd);
+		KeyOutcome {
+			prevent_default: acted,
+			changed: acted || was_pending,
 		}
-		if kb.help.matches(key, alt, ctrl) {
-			recognized("help");
-			self.help = !self.help;
-			return prevent(true);
-		}
-		if key == "d" && !alt && !ctrl {
-			recognized("inspect");
-			// maximized tile fills the view; else hit-test the cursor against the grid rects (tiles live
-			// in the root's scrolled content space, the cursor in client space).
-			let (cx, cy) = cursor;
-			let (ox, oy) = self.root_origin;
-			let (sw, sh) = self.step_px;
-			let hit = self.live(self.maximized).or_else(|| {
-				self.grid
-					.cells
-					.iter()
-					.find(|c| {
-						let (gx, gy) = (cx - ox, cy - oy + scroll_y);
-						gx >= c.x as f64 * sw && gx < (c.x + c.w) as f64 * sw && gy >= c.y as f64 * sh && gy < (c.y + c.h) as f64 * sh
-					})
-					.map(|c| c.group.id)
-			});
-			if let Some(gid) = hit {
-				if !self.popups.remove(&gid) {
-					self.popups.insert(gid);
-				}
-				return prevent(true);
-			}
-			return prevent(false);
-		}
-		// The two save chords, ahead of the host's own: a host that rebinds `s` would otherwise shadow
-		// the built-in cache without any way to notice.
-		if kb.save.matches(key, alt, ctrl) {
-			recognized("save");
-			let band = self.band();
-			if let Some(k) = self.cfg.storage_key.as_ref() {
-				persist::write(&format!("{k}-{band}"), &self.save());
-			}
-			// Cloning the `Rc` rather than taking it: the hook is `Fn(Saved)` and never touches `self`,
-			// so there is nothing to hand back.
-			if let Some(hook) = self.cfg.on_save.clone() {
-				hook(Saved::Cached { band });
-			}
-			return prevent(true);
-		}
-		if kb.publish.matches(key, alt, ctrl)
-			&& let Some(hook) = self.cfg.on_save.clone()
-		{
-			recognized("publish");
-			hook(Saved::Published {
-				band: self.band(),
-				json: self.save(),
-			});
-			return prevent(true);
-		}
-		// Host-registered chords: taken out so the boxed action can borrow `self` mutably, restored after.
-		let actions = std::mem::take(&mut self.cfg.actions);
-		let mut prevent_default = false;
-		for (bind, run) in &actions {
-			if bind.matches(key, alt, ctrl) {
-				recognized("custom-action");
+	}
+
+	/// Whether `cmd` acted. Commands that replace or drop cells wait out a gesture: `drag` and
+	/// `resize` address cells that would vanish under them.
+	fn run(&mut self, cmd: Command) -> bool {
+		let gesture = self.drag.is_some() || self.resize.is_some();
+		let b = match cmd {
+			Command::Builtin(b) => b,
+			Command::Custom { run, .. } => {
 				run(self);
-				prevent_default = true;
-				break;
+				return true;
+			}
+		};
+		match b {
+			Builtin::Undo => !gesture && self.restore(-1),
+			Builtin::Redo => !gesture && self.restore(1),
+			Builtin::Close => match self.live(self.focused) {
+				Some(g) if !gesture => {
+					self.close_active(g);
+					true
+				}
+				_ => false,
+			},
+			Builtin::Maximize => match self.live(self.focused) {
+				Some(f) => {
+					self.maximized = if self.maximized == Some(f) { None } else { Some(f) };
+					true
+				}
+				None => false,
+			},
+			Builtin::Inspect => match self.live(self.maximized).or(self.live(self.focused)) {
+				Some(g) => {
+					if !self.popups.remove(&g) {
+						self.popups.insert(g);
+					}
+					true
+				}
+				None => false,
+			},
+			Builtin::Help => {
+				self.help = !self.help;
+				true
+			}
+			Builtin::Cache => {
+				let band = self.band();
+				let k = self.cfg.storage_key.as_ref().expect("Cache resolves only with a storage key");
+				persist::write(&format!("{k}-{band}"), &self.save());
+				if let Some(hook) = self.cfg.on_save.clone() {
+					hook(Saved::Cached { band });
+				}
+				true
+			}
+			Builtin::Publish => {
+				let hook = self.cfg.on_save.clone().expect("Publish resolves only with on_save");
+				hook(Saved::Published {
+					band: self.band(),
+					json: self.save(),
+				});
+				true
 			}
 		}
-		self.cfg.actions = actions;
-		prevent(prevent_default)
 	}
 
 	// ------- view-model getters -------
@@ -806,22 +831,20 @@ impl PackedState {
 			.collect()
 	}
 
-	/// The rows of the `?` keybind hint: label + rendered chord.
-	pub fn help_rows(&self) -> Vec<(&'static str, String)> {
-		let kb = self.cfg.keybinds;
-		[
-			("Undo", kb.undo),
-			("Redo", kb.redo),
-			("Close pane", kb.close),
-			("Maximize pane", kb.maximize),
-			("Toggle this hint", kb.help),
-			("Save layout", kb.save),
-		]
-		.into_iter()
-		.chain(self.cfg.on_save.is_some().then_some(("Publish layout", kb.publish)))
-		.map(|(label, b)| (label, format!("{}{}{}", if b.ctrl { "Ctrl+" } else { "" }, if b.alt { "Alt+" } else { "" }, b.key)))
-		.chain(std::iter::once(("Inspect pane", "d".into())))
-		.collect()
+	/// The `?` modal, while open. `titles` names the pane it targets.
+	pub fn help(&self, titles: &HashMap<PanelId, String>) -> Option<Help> {
+		self.help.then(|| Help {
+			pane: self.live(self.focused).and_then(|g| {
+				let c = self.grid.cells.iter().find(|c| c.group.id == g).expect("live() checked the group exists");
+				titles.get(c.group.active_panel()).cloned()
+			}),
+			rows: self.keys.rows(),
+		})
+	}
+
+	/// The which-key popup, while a chord is pending.
+	pub fn hint(&self) -> Option<Hint> {
+		self.keys.hint(&self.pending)
 	}
 }
 
@@ -857,10 +880,6 @@ pub struct Ghost {
 	pub top: f64,
 	pub w: f64,
 	pub h: f64,
-}
-/// What a binding must do after a handled keydown.
-pub struct KeyOutcome {
-	pub prevent_default: bool,
 }
 /// A cached layout that couldn't be used. Loud on purpose: a seed cache that silently wipes itself
 /// is indistinguishable from one that was never written.

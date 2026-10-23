@@ -89,22 +89,39 @@ test('a container-only resize re-measures', async ({ page }) => {
 	await expect.poll(async () => (await page.locator('.tl-tile').first().boundingBox()).width).toBeLessThan(before.width - 50)
 })
 
-test('Alt+S then a reload restores the layout', async ({ page }) => {
+test('leader s s then a reload restores the layout', async ({ page }) => {
 	await join(page, 'Flux', 'Switch')
 	const edited = await geometry(page)
-	await page.keyboard.press('Alt+s')
+	for (const k of ['Alt+t', 's', 's']) await page.keyboard.press(k)
 	await page.reload()
 	await boot(page, page.url())
 	expect(await geometry(page)).toEqual(edited)
 })
 
-test('? is Grafana’s shortcuts modal, not the dock hint', async ({ page }) => {
+test('? is Grafana’s shortcuts modal; leader ? is ours', async ({ page }) => {
 	await page.keyboard.press('Shift+Slash')
 	await expect(page.getByRole('dialog')).toBeVisible()
 	await expect(page.locator('.tl-help')).toHaveCount(0)
 	await page.keyboard.press('Escape')
-	await page.keyboard.press('Shift+KeyH')
+	await page.keyboard.press('Alt+t')
+	await page.keyboard.press('Shift+Slash')
 	await expect(page.locator('.tl-help')).toBeVisible()
+})
+
+test('Grafana’s own keys pass through the dock', async ({ page }) => {
+	// Registered after the dock's capture-phase listener and before any of Grafana's document ones,
+	// so it reads what *we* did to the event.
+	await page.evaluate(() => {
+		globalThis.__tlProbe = []
+		window.addEventListener('keydown', (e) => globalThis.__tlProbe.push(e.defaultPrevented), true)
+	})
+	// An edit first, so an unclaimed Ctrl+Z is a choice rather than an empty history.
+	await join(page, 'Flux', 'Switch')
+	for (const k of ['Control+z', 'd']) {
+		await page.keyboard.press(k)
+		expect(await page.evaluate(() => globalThis.__tlProbe.at(-1)), `${k} is Grafana’s`).toBe(false)
+		await page.keyboard.press('Escape')
+	}
 })
 
 test('an idle dock does no work beyond a native dashboard', async ({ page }) => {

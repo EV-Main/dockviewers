@@ -44,18 +44,29 @@ pub const CSS: &str = r#"
 	background: var(--tl-group-bg, #1e1e1e); border: 1px solid var(--tl-accent, #63e9cd);
 	box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }
 .tl-tab-drop { box-shadow: inset 0 0 0 2px var(--tl-accent, #63e9cd); }
-/* `?` hint: a dim scrim over the whole root with a centered card listing the active binds. */
+/* Which-key popup while a chord is pending. It mounts at once and reveals after the delay, so a
+   chord typed fast never flashes it. `visibility`, not `opacity`: a transparent box still counts as
+   shown to hit-testing and to tests. */
+.tl-hint { position: absolute; right: 12px; bottom: 12px; z-index: 1075; min-width: 180px;
+	padding: 10px 14px; background: var(--tl-group-bg, #1e1e1e); border: 1px solid var(--tl-accent, #63e9cd);
+	border-radius: 6px; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+	animation: tl-hint-in 0s var(--tl-hint-delay, 150ms) both; }
+@keyframes tl-hint-in { from { visibility: hidden; } to { visibility: visible; } }
+.tl-hint-prefix { font-family: ui-monospace, monospace; opacity: 0.6; margin-bottom: 6px; }
+.tl-hint-row { display: flex; gap: 12px; padding: 2px 0; }
+/* The full keymap: a dim scrim over the whole root with a centered card. */
 .tl-help-scrim { position: absolute; inset: 0; z-index: 1100; display: flex; align-items: center;
 	justify-content: center; background: rgba(0, 0, 0, 0.45); cursor: pointer; }
 .tl-help { min-width: 240px; padding: 14px 18px; background: var(--tl-group-bg, #1e1e1e);
 	border: 1px solid var(--tl-accent, #63e9cd); border-radius: 6px; cursor: default;
 	box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5); }
 .tl-help-title { font-weight: 600; margin-bottom: 8px; }
+.tl-help-pane { opacity: 0.7; margin-bottom: 8px; }
 .tl-help-row { display: flex; justify-content: space-between; gap: 24px; padding: 3px 0; }
 .tl-help-key { font-family: ui-monospace, monospace; background: var(--tl-tab-bg, #2d2d2d);
 	padding: 0 6px; border-radius: 3px; color: var(--tl-tab-active-fg, #fff); }
 .tl-help-foot { margin-top: 10px; opacity: 0.5; font-size: 11px; }
-/* `d` inspect popup: translucent dimensions box over a container, content shows through. */
+/* Inspect popup: translucent dimensions box over a container, content shows through. */
 .tl-inspect { position: absolute; z-index: 1050; pointer-events: none;
 	display: flex; align-items: center; justify-content: center;
 	background: var(--tl-group-bg, rgba(30, 30, 30, 0.25));

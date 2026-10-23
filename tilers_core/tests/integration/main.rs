@@ -1,3 +1,4 @@
+#![feature(default_field_values)]
 //! Deterministic model fuzzer for the tilers DnD tree reshapers (matklad FRNG +
 //! TigerBeetle VOPR). One integration binary, per matklad's "delete cargo integration tests":
 //! `fuzz` drives random seeds, auto-minimizes the first failure, and records its minimal
@@ -9,6 +10,7 @@
 //! one-line target table below.
 
 mod actions;
+mod keys;
 mod mins;
 mod oracle;
 mod sim;
@@ -18,7 +20,8 @@ use v_utils::fuzz::{Suite, Target};
 const SUITE: Suite = Suite {
 	targets: &[Target {
 		name: "sim",
-		version: v_utils::fuzz::fnv(&[v_utils::fuzz::FRNG_SRC, include_str!("actions.rs"), include_str!("sim.rs")]),
+		// `keys.rs` too: the key alphabet is walked out of `Keymap::default()`.
+		version: v_utils::fuzz::fnv(&[v_utils::fuzz::FRNG_SRC, include_str!("actions.rs"), include_str!("sim.rs"), include_str!("../../src/keys.rs")]),
 		// `Failure::step` is flattened into the message rather than dropped: it is the one thing a
 		// recorded line cannot recover from `(seed, size)` without re-running the case.
 		run: |s, z, v| sim::run(s, z, v, &mut |_, _| {}).map_err(|f| format!("step {}: {}", f.step, f.what)),

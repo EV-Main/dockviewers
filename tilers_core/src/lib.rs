@@ -10,15 +10,16 @@
 //! (drag/resize/undo/fit) is unit-testable without a DOM — see `tests/integration`.
 
 pub mod config;
+pub mod keys;
 pub mod model;
 pub mod state;
 
 mod css;
 mod persist;
-pub use config::{Band, Breakpoint, Config, Keybind, Keybinds, Saved};
+pub use config::{Band, Breakpoint, Config, Saved};
 pub use css::CSS;
 pub use model::{
 	Group, GroupId, PanelId,
 	packed::{MinSize, PackedGrid, Step},
 };
-pub use state::{ContentSlot, Frame, Ghost, KeyOutcome, PackedState};
+pub use state::{ContentSlot, Frame, Ghost, PackedState};

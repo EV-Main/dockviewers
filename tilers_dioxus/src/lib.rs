@@ -13,5 +13,5 @@ pub mod panel;
 pub mod view;
 
 pub use panel::DockPanel;
-pub use tilers_core::{Band, Config, Group, GroupId, Keybind, Keybinds, MinSize, PackedGrid, PackedState, PanelId, Saved, Step, config::Action, model};
+pub use tilers_core::{Band, Config, Group, GroupId, MinSize, PackedGrid, PackedState, PanelId, Saved, Step, keys, model};
 pub use view::{PackedApi, PackedArea};
