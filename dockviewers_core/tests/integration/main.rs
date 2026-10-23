@@ -9,6 +9,7 @@
 //! one-line target table below.
 
 mod actions;
+mod mins;
 mod oracle;
 mod sim;
 

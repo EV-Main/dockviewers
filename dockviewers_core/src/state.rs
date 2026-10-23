@@ -41,9 +41,11 @@ pub struct PackedState {
 	/// Live px-per-step on each axis (`width / cols`, `height / rows`); `(0, 0)` until first measure.
 	step_px: (f64, f64),
 	/// The document's actual root font size, re-read at every measure. Bridges rem ⇄ px for the
-	/// chrome height and a type's rem-expressed [`MinSize`], so both track browser zoom / a reader's
-	/// font preference instead of assuming 16.
+	/// chrome height and a rem-expressed [`MinSize`].
 	rem_px: f64,
+	/// Every panel's declared min, mirrored from the binding's panel list. Host intent, not layout:
+	/// cell floors are re-derived from it ([`refloor`](Self::refloor)) whenever the step or a tile's tabs change.
+	mins: HashMap<PanelId, MinSize>,
 	breakpoint: Breakpoint,
 	drag: Option<Drag>,
 	resize: Option<ResizeStart>,
@@ -73,6 +75,7 @@ impl PackedState {
 			cols,
 			step_px: (0.0, 0.0),
 			rem_px: REM_PX,
+			mins: HashMap::new(),
 			breakpoint: Breakpoint::default(),
 			drag: None,
 			resize: None,
@@ -129,27 +132,53 @@ impl PackedState {
 
 	// ------- imperative host API (folded from the old `PackedApi`) -------
 
-	/// Auto-pack `group`, resolving its per-type [`MinSize`] against the live step size first.
-	pub fn place(&mut self, group: Group, w: u32, h: u32, min: MinSize) {
-		let (sw, sh) = self.step_px;
-		assert!(sw > 0.0 && sh > 0.0, "place before the first measure: no step size yet");
-		self.grid.place(group, w, h, min.resolve(sw, sh, self.rem_px), self.cols);
-	}
-
-	/// Re-floor `panel`'s tile against the live step size — the host recomputed what its content
-	/// needs. Idempotent, so a host may call it on every content or viewport change.
-	pub fn set_min(&mut self, panel: &PanelId, min: MinSize) {
-		let (sw, sh) = self.step_px;
-		assert!(sw > 0.0 && sh > 0.0, "set_min before the first measure: no step size yet");
-		self.grid.set_min(panel, min.resolve(sw, sh, self.rem_px), self.cols);
+	/// Auto-pack `group` at a wanted `w×h`, floored by its tabs' declared mins.
+	pub fn place(&mut self, group: Group, w: u32, h: u32) {
+		assert!(self.step_px.0 > 0.0, "place before the first measure: no step size yet");
+		let floor = self.floor(&group.tabs);
+		self.grid.place(group, w, h, floor, self.cols);
 	}
 
 	pub fn add_tab(&mut self, group: GroupId, panel: PanelId) {
 		self.grid.add_tab(group, panel);
+		self.refloor();
 	}
 
 	pub fn close_active(&mut self, group: GroupId) {
 		self.grid.close_active(group);
+		self.refloor();
+	}
+
+	/// Replace every panel's declared min — the binding mirrors its panel list here on each change.
+	pub fn set_mins(&mut self, mins: HashMap<PanelId, MinSize>) {
+		self.mins = mins;
+		self.refloor();
+	}
+
+	/// The floor a tile hosting `tabs` gets at the live step: the max of their resolved mins.
+	fn floor(&self, tabs: &[PanelId]) -> (u32, u32) {
+		let (sw, sh) = self.step_px;
+		tabs.iter()
+			.map(|p| {
+				self.mins
+					.get(p)
+					.unwrap_or_else(|| panic!("hosted panel {p:?} has no declared min: the binding's panels list every panel the layout hosts"))
+					.resolve(sw, sh, self.rem_px, self.title_h())
+			})
+			.fold((0, 0), |(w, h), (pw, ph)| (w.max(pw), h.max(ph)))
+	}
+
+	/// Re-derive every cell's floor at the live step, then reflow onto it. A no-op before the first
+	/// measure: there is no step to resolve against, and `set_measure` refloors once there is.
+	fn refloor(&mut self) {
+		if self.step_px.0 <= 0.0 {
+			return;
+		}
+		let floors: Vec<(u32, u32)> = self.grid.cells.iter().map(|c| self.floor(&c.group.tabs)).collect();
+		for (c, (w, h)) in self.grid.cells.iter_mut().zip(floors) {
+			(c.min_w, c.min_h) = (w, h);
+		}
+		self.grid.refit(self.cols);
 	}
 
 	pub fn resize(&mut self, idx: usize, new_w: u32, new_h: u32) {
@@ -163,10 +192,10 @@ impl PackedState {
 
 	/// Replace the layout with a previously [`save`](Self::save)d one; errors (not a silent reset)
 	/// on a corrupt or future-version payload. The file may have been saved in another band, so it
-	/// is settled into the live geometry.
+	/// is settled into the live geometry — every panel it hosts must already have a declared min.
 	pub fn load(&mut self, json: &str) -> Result<(), serial::LoadError> {
 		self.grid = serial::load(json)?;
-		self.grid.refit(self.cols);
+		self.refloor();
 		Ok(())
 	}
 
@@ -208,7 +237,7 @@ impl PackedState {
 	/// Store the root's origin (to map pointer→grid space) and its content box, then reflow the
 	/// grid to fill it: classify the width into a responsive band, stretch `cols × rows` across the
 	/// container (a horizontal step is `width / cols`, cols scaled per band; a vertical one
-	/// `height / rows`, rows fixed), and refit tiles into any new column count.
+	/// `height / rows`, rows fixed), and refloor tiles onto the new step.
 	pub fn set_measure(&mut self, origin: (f64, f64), size: (f64, f64)) {
 		self.root_origin = origin;
 		self.root_size = size;
@@ -222,12 +251,9 @@ impl PackedState {
 		let bp = Breakpoint::of(width);
 		let c = bp.scale_cols(steps);
 		self.breakpoint = bp;
-		if self.cols != c {
-			self.cols = c;
-			// Reflow tiles into the new band so a layout built wide never spills past a narrower view.
-			self.grid.refit(c);
-		}
+		self.cols = c;
 		self.step_px = (width / c as f64, height / rows as f64);
+		self.refloor();
 	}
 
 	/// Whether [`capture_undo`](Self::capture_undo) would actually push. A binding that captures via
@@ -257,7 +283,8 @@ impl PackedState {
 	/// every band change. `true` ⇒ this band's cached layout was restored from `localStorage`;
 	/// `false` ⇒ nothing usable was cached and the grid has been reset — the host must place its
 	/// tiles (or load its own default). Called by the binding after every measure; it then invokes
-	/// the host's `on_band` hook.
+	/// the host's `on_band` hook, and only then [`set_mins`](Self::set_mins): a restored layout may
+	/// host panels the host only lists once `on_band` has rebuilt them, so its floors wait for that.
 	pub fn take_band(&mut self) -> Option<bool> {
 		let band = self.band();
 		if self.step_px.0 <= 0.0 || self.shown == Some(band) {
@@ -278,7 +305,6 @@ impl PackedState {
 			}
 			Ok(grid) => {
 				self.grid = grid;
-				self.grid.refit(self.cols);
 				Some(true)
 			}
 			Err(e) => {
@@ -389,6 +415,7 @@ impl PackedState {
 		if d.armed {
 			if let Some(t) = d.target {
 				self.grid.drop(d.source, t, self.cols);
+				self.refloor();
 			}
 		} else if let DragSource::Tab { panel, from } = &d.source
 			&& let Some(c) = self.grid.cells.iter_mut().find(|c| c.group.id == *from)
@@ -444,12 +471,12 @@ impl PackedState {
 	}
 
 	/// Walk the undo history by `dir` and settle whatever comes back into the live geometry. A
-	/// snapshot may have been taken in another responsive band, so it needs the same refit a
-	/// [`load`](Self::load)ed layout does — restoring one verbatim would spill it past `cols`.
+	/// snapshot may have been taken at another step, so it needs the same refloor a
+	/// [`load`](Self::load)ed layout does — restoring one verbatim would spill past `cols` or its floors.
 	fn restore(&mut self, dir: i32) {
-		if let Some(mut g) = self.undo.step(dir) {
-			g.refit(self.cols);
+		if let Some(g) = self.undo.step(dir) {
 			self.grid = g;
+			self.refloor();
 		}
 	}
 

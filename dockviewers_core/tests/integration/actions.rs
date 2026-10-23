@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 
 use dockviewers_core::{
-	Group, GroupId, Keybind, PackedState, PanelId, Step,
+	Group, GroupId, Keybind, PanelId, Step,
 	model::packed::{DragSource, DropTarget, MinSize},
 };
 use v_utils::fuzz::Frng;
@@ -39,7 +39,7 @@ const DRAG: usize = 4;
 const RESIZE: usize = 5;
 const KEY: usize = 6;
 const SAVE_LOAD: usize = 7;
-const SET_MIN: usize = 8;
+const SET_MINS: usize = 8;
 
 #[derive(Clone, Debug)]
 pub enum Action {
@@ -55,6 +55,7 @@ pub enum Action {
 	},
 	AddTab {
 		group: GroupId,
+		min: MinSize,
 	},
 	Focus {
 		group: GroupId,
@@ -76,9 +77,9 @@ pub enum Action {
 	Key(KeyKind),
 	/// `save()` → a fresh state measured the same → `load()` → must reproduce the layout.
 	SaveLoad,
-	/// A host re-flooring a panel from its content. The floor is unbounded by the tile's current
-	/// span, which is the case `resize` never produces.
-	SetMin {
+	/// A host re-declaring a panel's min in its panel list. The floor is unbounded by the tile's
+	/// current span, which is the case `resize` never produces.
+	SetMins {
 		panel: PanelId,
 		min: MinSize,
 	},
@@ -112,12 +113,12 @@ pub fn apply(action: &Action, world: &mut World, mid: &mut dyn FnMut(&World)) ->
 		Action::Place { w, h, min } => {
 			world.structural_edit();
 			let gid = world.state.mint_group_id();
-			let panel = world.mint_panel();
-			world.state.place(Group::new(gid, panel), *w, *h, *min);
+			let panel = world.mint_panel(*min);
+			world.state.place(Group::new(gid, panel), *w, *h);
 		}
-		Action::AddTab { group } => {
+		Action::AddTab { group, min } => {
 			world.structural_edit();
-			let panel = world.mint_panel();
+			let panel = world.mint_panel(*min);
 			world.state.add_tab(*group, panel);
 		}
 		Action::Focus { group } => world.state.focus(*group),
@@ -137,9 +138,10 @@ pub fn apply(action: &Action, world: &mut World, mid: &mut dyn FnMut(&World)) ->
 		}
 		Action::Key(k) => return key(*k, world),
 		Action::SaveLoad => return save_load(world),
-		Action::SetMin { panel, min } => {
+		Action::SetMins { panel, min } => {
 			world.structural_edit();
-			world.state.set_min(panel, *min);
+			world.mins.insert(panel.clone(), *min);
+			world.state.set_mins(world.mins.clone());
 		}
 	}
 	Ok(())
@@ -156,7 +158,7 @@ pub fn generate(frng: &mut Frng, world: &World, weights: &[u32; N_KINDS]) -> Opt
 		avail.push(DRAG);
 		// `resize_start` indexes the cell list, so an empty grid has no grip to take.
 		avail.push(RESIZE);
-		avail.push(SET_MIN);
+		avail.push(SET_MINS);
 		// A mid-resize grid is deliberately unsettled and `load` refits, so the two can't agree yet.
 		if !world.state.resizing() {
 			avail.push(SAVE_LOAD);
@@ -184,24 +186,12 @@ pub fn generate(frng: &mut Frng, world: &World, weights: &[u32; N_KINDS]) -> Opt
 			// scale with the band, and a fixed 1..8 would be a sliver on the 36-row default.
 			let w = 1 + frng.below(world.state.cols() / 2);
 			let h = 1 + frng.below(world.cfg.rows / 2);
-			Action::Place {
-				w,
-				h,
-				// Both `MinSize` arms: `Rem` is the one that resolves against the live step size.
-				min: if frng.below(2) == 0 {
-					MinSize::Steps {
-						w: Step(1 + frng.below(w)),
-						h: Step(1 + frng.below(h)),
-					}
-				} else {
-					MinSize::Rem {
-						w: (1 + frng.below(20)) as f64,
-						h: (1 + frng.below(20)) as f64,
-					}
-				},
-			}
+			Action::Place { w, h, min: min(frng, w, h) }
 		}
-		ADD_TAB => Action::AddTab { group: pick_group(frng, world) },
+		ADD_TAB => Action::AddTab {
+			group: pick_group(frng, world),
+			min: min(frng, world.state.cols(), world.cfg.rows),
+		},
 		FOCUS => Action::Focus { group: pick_group(frng, world) },
 		DRAG => {
 			let c = &cells[frng.below(cells.len() as u32) as usize];
@@ -254,28 +244,37 @@ pub fn generate(frng: &mut Frng, world: &World, weights: &[u32; N_KINDS]) -> Opt
 		}
 		KEY => Action::Key(KEY_KINDS[frng.below(KEY_KINDS.len() as u32) as usize]),
 		SAVE_LOAD => Action::SaveLoad,
-		SET_MIN => {
+		SET_MINS => {
 			let c = &cells[frng.below(cells.len() as u32) as usize];
-			Action::SetMin {
+			Action::SetMins {
 				panel: c.group.tabs[frng.below(c.group.tabs.len() as u32) as usize].clone(),
 				// Drawn against the whole band, not the tile — a floor wider than what's left of the row
 				// is the case only a re-floor can reach, and the one that must clamp rather than spill.
-				min: if frng.below(2) == 0 {
-					MinSize::Steps {
-						w: Step(1 + frng.below(world.state.cols())),
-						h: Step(1 + frng.below(world.cfg.rows)),
-					}
-				} else {
-					MinSize::Rem {
-						w: (1 + frng.below(20)) as f64,
-						h: (1 + frng.below(20)) as f64,
-					}
-				},
+				min: min(frng, world.state.cols(), world.cfg.rows),
 			}
 		}
 		_ => unreachable!("kind is one of the constants pushed into `avail`"),
 	})
 }
+/// Every `MinSize` arm, `Steps` bounded by `w×h`: the length arms are the ones that re-resolve
+/// against the live step, and `Px` is a content size that must hold through every measure.
+fn min(frng: &mut Frng, w: u32, h: u32) -> MinSize {
+	match frng.below(3) {
+		0 => MinSize::Steps {
+			w: Step(1 + frng.below(w)),
+			h: Step(1 + frng.below(h)),
+		},
+		1 => MinSize::Rem {
+			w: (1 + frng.below(20)) as f64,
+			h: (1 + frng.below(20)) as f64,
+		},
+		_ => MinSize::Px {
+			w: frng.below(600) as f64,
+			h: frng.below(400) as f64,
+		},
+	}
+}
+
 /// One whole pointer gesture, plus the three invariants that only exist around it: a press never
 /// touches the model, a cancel is a no-op, and an unarmed release is pure tab activation.
 fn drag(grab: &Grab, path: &[(f64, f64)], commit: bool, world: &mut World, mid: &mut dyn FnMut(&World)) -> Result<(), String> {
@@ -383,19 +382,19 @@ fn key(k: KeyKind, world: &mut World) -> Result<(), String> {
 	world.state.on_key(bind.key, bind.alt, bind.ctrl, world.cursor, 0.0);
 	match k {
 		// Maximize, the hint and the inspect popups are pure view state: they may never touch the model.
-		KeyKind::Maximize | KeyKind::Help | KeyKind::Escape | KeyKind::Inspect =>
+		KeyKind::Maximize | KeyKind::Help | KeyKind::Escape | KeyKind::Inspect => {
 			if world.state.grid() != &before {
 				return Err(format!("{k:?} is view-only but changed the layout: {:?} vs {:?}", world.state.grid().cells, before.cells));
-			},
+			}
+		}
 		KeyKind::Undo | KeyKind::Redo => {
 			world.structural_edit();
-			// A restored snapshot is refit into the live band first, so the match is against each capture
-			// as it would land here — not against the raw capture.
-			let landed = world.undo_log.iter().any(|g| {
-				let mut g = g.clone();
-				g.refit(world.state.cols());
-				&g == world.state.grid()
-			});
+			// A restored snapshot is settled into the live geometry first, so the match is against each
+			// capture as it would land here — not against the raw capture.
+			let mut landed = false;
+			for g in &world.undo_log {
+				landed |= &world.settled(g)? == world.state.grid();
+			}
 			if world.state.grid() != &before && !landed {
 				return Err(format!("{k:?} produced a layout that was never captured: {:?}", world.state.grid().cells));
 			}
@@ -406,12 +405,9 @@ fn key(k: KeyKind, world: &mut World) -> Result<(), String> {
 }
 
 fn save_load(world: &mut World) -> Result<(), String> {
-	let json = world.state.save();
-	let mut fresh = PackedState::new(world.cfg.clone());
-	fresh.set_measure(world.origin, world.size);
-	fresh.load(&json).map_err(|e| format!("load of our own save failed: {e:?}"))?;
-	if fresh.grid() != world.state.grid() {
-		return Err(format!("save/load changed the layout: {:?} vs {:?}", fresh.grid().cells, world.state.grid().cells));
+	let fresh = world.settled(world.state.grid())?;
+	if &fresh != world.state.grid() {
+		return Err(format!("save/load changed the layout: {:?} vs {:?}", fresh.cells, world.state.grid().cells));
 	}
 	Ok(())
 }

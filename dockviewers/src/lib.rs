@@ -5,7 +5,7 @@
 //! This crate is a thin **facade** over the ecosystem — pick a UI binding with a feature flag:
 //!
 //! ```toml
-//! dockviewers = { version = "0.2", features = ["dioxus"] }   # or ["leptos"]
+//! dockviewers = { version = "0.3", features = ["dioxus"] }   # or ["leptos"]
 //! ```
 //!
 //! - Always available: [`core`] re-exports [`dockviewers_core`] — the framework-agnostic engine

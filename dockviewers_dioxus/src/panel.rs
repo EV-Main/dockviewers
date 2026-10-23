@@ -3,7 +3,7 @@
 //! where an app injects its own widget for each panel id while the library owns layout.
 
 use dioxus::prelude::*;
-use dockviewers_core::PanelId;
+use dockviewers_core::{MinSize, PanelId};
 
 /// One widget the consumer hands to [`PackedArea`](crate::view::PackedArea). The `content`
 /// `Element` is rendered once per panel in a stable, id-keyed list inside the content-overlay
@@ -19,4 +19,6 @@ pub struct DockPanel {
 	pub id: PanelId,
 	pub title: String,
 	pub content: Element,
+	/// What the content needs to stay legible; every tile hosting it is floored to fit.
+	pub min: MinSize,
 }

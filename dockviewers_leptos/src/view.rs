@@ -18,19 +18,25 @@ use crate::panel::DockPanel;
 #[derive(Clone, Copy)]
 pub struct PackedApi {
 	state: RwSignal<PackedState, LocalStorage>,
+	panels: RwSignal<Vec<DockPanel>>,
 }
 
 impl PackedApi {
-	pub fn place(&self, group: Group, w: u32, h: u32, min: MinSize) {
-		self.state.update(|s| s.place(group, w, h, min));
-	}
-
-	pub fn set_min(&self, panel: &PanelId, min: MinSize) {
-		self.state.update(|s| s.set_min(panel, min));
+	/// `group`'s panels must already be in `panels`: their declared mins floor the tile.
+	pub fn place(&self, group: Group, w: u32, h: u32) {
+		let mins = self.panels.with_untracked(|ps| mins_of(ps));
+		self.state.update(|s| {
+			s.set_mins(mins);
+			s.place(group, w, h)
+		});
 	}
 
 	pub fn add_tab(&self, group: GroupId, panel: PanelId) {
-		self.state.update(|s| s.add_tab(group, panel));
+		let mins = self.panels.with_untracked(|ps| mins_of(ps));
+		self.state.update(|s| {
+			s.set_mins(mins);
+			s.add_tab(group, panel)
+		});
 	}
 
 	pub fn close_active(&self, group: GroupId) {
@@ -73,8 +79,15 @@ impl PackedApi {
 		self.state.with(|s| s.save())
 	}
 
+	/// Every panel the payload hosts must already be in `panels`.
 	pub fn load(&self, json: &str) -> Result<(), LoadError> {
-		self.state.try_update(|s| s.load(json)).expect("state signal alive")
+		let mins = self.panels.with_untracked(|ps| mins_of(ps));
+		self.state
+			.try_update(|s| {
+				s.set_mins(mins);
+				s.load(json)
+			})
+			.expect("state signal alive")
 	}
 }
 
@@ -98,7 +111,7 @@ pub fn PackedArea(
 	let cfg = config.unwrap_or_default();
 	let title_h_rem = cfg.title_h_rem;
 	let state = RwSignal::new_local(PackedState::new(cfg));
-	let api = PackedApi { state };
+	let api = PackedApi { state, panels };
 	let root = NodeRef::<leptos::html::Div>::new();
 
 	// Observing the root rather than the window: a host can resize the container on its own (a
@@ -129,6 +142,12 @@ pub fn PackedArea(
 	}
 	#[cfg(not(target_arch = "wasm32"))]
 	root.on_load(move |el| measure(el.into(), state, api, on_band.as_ref()));
+
+	// A panel's declared min is host intent the state re-derives floors from.
+	Effect::new(move |_| {
+		let mins = panels.with(|ps| mins_of(ps));
+		state.update(|s| s.set_mins(mins));
+	});
 
 	// Undo history: snapshot a settled layout after each structural edit. The `wants_undo_snapshot`
 	// read subscribes this effect; the guarded update doesn't re-fire it into a loop.
@@ -328,6 +347,10 @@ pub fn PackedArea(
 	}
 }
 
+fn mins_of(panels: &[DockPanel]) -> HashMap<PanelId, MinSize> {
+	panels.iter().map(|p| (p.id.clone(), p.min)).collect()
+}
+
 /// Panel id → tab label, read from the panels signal (tracks it).
 fn panel_titles(panels: RwSignal<Vec<DockPanel>>) -> HashMap<PanelId, String> {
 	panels.with(|ps| ps.iter().map(|p| (p.id.clone(), p.title.clone())).collect())
@@ -443,14 +466,16 @@ fn render_frame(frame: dockviewers_core::Frame, state: RwSignal<PackedState, Loc
 
 /// Hand the root's origin + content box to the core measure, then resolve the band: the latch has
 /// already restored-or-reset the grid by the time `on_band` runs, so the host only fills in what it
-/// left behind.
+/// left behind — and only then lists every panel a restored layout hosts, so its floors land after.
 fn measure(el: web_sys::Element, state: RwSignal<PackedState, LocalStorage>, api: PackedApi, on_band: Option<&Arc<dyn Fn(PackedApi) + Send + Sync>>) {
 	let rect = el.get_bounding_client_rect();
 	state.update(|s| s.set_measure((rect.x(), rect.y()), (el.client_width() as f64, el.client_height() as f64)));
-	if state.try_update(|s| s.take_band()).expect("state signal alive").is_some()
-		&& let Some(cb) = on_band
-	{
-		cb(api);
+	if state.try_update(|s| s.take_band()).expect("state signal alive").is_some() {
+		if let Some(cb) = on_band {
+			cb(api);
+		}
+		let mins = api.panels.with_untracked(|ps| mins_of(ps));
+		state.update(|s| s.set_mins(mins));
 	}
 }
 

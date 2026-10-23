@@ -32,9 +32,9 @@ non_kebab_case_bins = "allow"
 clap = { version = "^4.5.4", features = ["derive"] }
 console_error_panic_hook = "0.1"
 dioxus = { version = "^0.7", default-features = false, features = ["lib"] } # no `devtools`/`launch`: consumers choose those
-dockviewers_core = { path = "dockviewers_core", version = "0.2.2" }
-dockviewers_dioxus = { path = "dockviewers_dioxus", version = "0.2.3" }
-dockviewers_leptos = { path = "dockviewers_leptos", version = "0.2.2" }
+dockviewers_core = { path = "dockviewers_core", version = "0.3.0" }
+dockviewers_dioxus = { path = "dockviewers_dioxus", version = "0.3.0" }
+dockviewers_leptos = { path = "dockviewers_leptos", version = "0.3.0" }
 gloo-timers = "0.3"
 js-sys = "0.3"
 leptos = { version = "^0.8" }

@@ -5,8 +5,9 @@
 
 use crate::model::packed::PackedGrid;
 
-/// Bump when the on-disk shape changes; `load` would migrate older payloads.
-pub const SCHEMA_VERSION: u32 = 1;
+/// Bump when the on-disk shape changes; `load` would migrate older payloads. v2: cell floors are
+/// derived, so v1's stored `min_w`/`min_h` are ignored on load.
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// Versioned wrapper actually written to storage.
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -57,15 +58,31 @@ mod tests {
 		g
 	}
 
+	/// Floors are derived from the host's declared mins, so a round-trip drops them by design.
+	fn layout(mut g: PackedGrid) -> PackedGrid {
+		for c in &mut g.cells {
+			(c.min_w, c.min_h) = (0, 0);
+		}
+		g
+	}
+
 	#[test]
 	fn round_trips() {
 		let g = sample();
-		assert_eq!(load(&save(&g)).expect("loads"), g, "round-trip must preserve the grid (incl. next_group_id)");
+		assert_eq!(load(&save(&g)).expect("loads"), layout(g), "round-trip must preserve the layout (incl. next_group_id)");
+	}
+
+	#[test]
+	fn v1_loads_without_its_stored_floors() {
+		let v1 = r#"{"version":1,"grid":{"cells":[{"group":{"id":0,"tabs":["a"],"active":0},"x":0,"y":0,"w":3,"h":2,"min_w":2,"min_h":2,"desired_w":null,"desired_x":null,"rank":0}],"state":"Settled","next_group_id":1}}"#;
+		let g = load(v1).expect("a v1 payload loads");
+		let c = &g.cells[0];
+		assert_eq!((c.x, c.y, c.w, c.h, c.min_w, c.min_h, c.desired_h), (0, 0, 3, 2, 0, 0, None));
 	}
 
 	#[test]
 	fn future_version_errors_not_resets() {
-		let json = save(&sample()).replace("\"version\":1", &format!("\"version\":{}", SCHEMA_VERSION + 1));
+		let json = save(&sample()).replace(&format!("\"version\":{SCHEMA_VERSION}"), &format!("\"version\":{}", SCHEMA_VERSION + 1));
 		assert!(matches!(load(&json), Err(LoadError::FutureVersion(v)) if v == SCHEMA_VERSION + 1));
 	}
 

@@ -17,11 +17,11 @@ A random fuzz run (seed 172), not a demo. For the real thing, [play with it](htt
 // generate it yourself: `nix run .#film`.
 
 ## Usage
-Hand `PackedArea` a `Signal` of `DockPanel`s (id + title + the content to render); the library owns layout, you own content.
+Hand `PackedArea` a `Signal` of `DockPanel`s (id + title + the content to render + what that content needs); the library owns layout, you own content.
 
 ```rust
 use dioxus::prelude::*;
-use dockviewers_dioxus::{Config, DockPanel, Group, MinSize, PackedApi, PackedArea, PanelId, Step};
+use dockviewers_dioxus::{Config, DockPanel, Group, MinSize, PackedApi, PackedArea, PanelId};
 
 fn app() -> Element {
     let panels = use_signal(Vec::<DockPanel>::new);
@@ -35,9 +35,10 @@ fn app() -> Element {
         panels.write().clear();
         for (id, title) in [("chart", "Chart"), ("orders", "Orders")] {
             let id = PanelId(id.into());
-            panels.write().push(DockPanel { id: id.clone(), title: title.into(), content: rsx! { "…" } });
+            let min = MinSize::Px { w: 240.0, h: 120.0 }; // the content box, below the title bar
+            panels.write().push(DockPanel { id: id.clone(), title: title.into(), content: rsx! { "…" }, min });
             let gid = api.mint_group_id();
-            api.place(Group::new(gid, id), 22, 16, MinSize::Steps { w: Step(4), h: Step(3) });
+            api.place(Group::new(gid, id), 22, 16);
         }
     });
 
@@ -55,6 +56,8 @@ Runnable demo: `dx serve --example insilico --package dockviewers_dioxus --platf
 
 **Props:** `panels` (order = stable overlay render order — don't reorder it, that remounts panels), `on_band` (see below), `config`.
 
+**Mins** belong to the panel: `MinSize::Px`/`Rem` size its content box, `Steps` the whole tile. Every tile is floored to the max over its tabs, re-resolved on every measure, so a px need holds however short the window gets; a want the floor overrode comes back once the floor drops. Edit a panel's `min` in `panels` to re-floor it.
+
 **Bands and the seed cache.** A container width classifies into one of three `Band`s — `sm`/`md`/`xl` — each keeping its own arrangement, because a phone doesn't want a desktop's tiling. Set `Config::storage_key` and the framework caches the layout in `localStorage` under `<key>-<band>` on `Alt+S`, restoring it before your code runs. `on_band` fires once per band entry — at mount, and again on every crossing — *after* that resolution:
 
 - `api.restored()` ⇒ the cache had a layout and the grid is already populated; walk `api.tab_ids()` to rebuild your panel list from the ids it holds.
@@ -68,7 +71,7 @@ A cached payload that is corrupt, from a future schema, or empty counts as a mis
 
 ```rust
 let gid = api.mint_group_id();
-api.place(Group::new(gid, id), w, h, min); // auto-packs left-to-right, top-to-bottom
+api.place(Group::new(gid, id), w, h);    // auto-packs left-to-right, top-to-bottom
 api.add_tab(gid, panel_id);
 api.close_active(gid);
 api.resize(idx, new_w, new_h);

@@ -32,6 +32,7 @@ fn make_panel(kind: &str, n: u64) -> DockPanel {
 			}
 			.into_any()
 		}),
+		min: MinSize::Steps { w: Step(3), h: Step(2) },
 	}
 }
 
@@ -44,7 +45,7 @@ fn seed(api: PackedApi, panels: RwSignal<Vec<DockPanel>>) {
 		let id = panel.id.clone();
 		panels.update(|v| v.push(panel));
 		let gid = api.mint_group_id();
-		api.place(Group::new(gid, id), 10 + i as u32 * 3, 8, MinSize::Steps { w: Step(3), h: Step(2) });
+		api.place(Group::new(gid, id), 10 + i as u32 * 3, 8);
 	}
 }
 

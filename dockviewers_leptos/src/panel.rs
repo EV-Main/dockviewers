@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use dockviewers_core::PanelId;
+use dockviewers_core::{MinSize, PanelId};
 use leptos::prelude::AnyView;
 
 /// A view factory: called once per panel when its key first appears in the overlay's keyed `<For>`,
@@ -14,10 +14,11 @@ use leptos::prelude::AnyView;
 pub type PanelView = Arc<dyn Fn() -> AnyView + Send + Sync>;
 
 /// One widget the consumer hands to [`PackedArea`](crate::view::PackedArea): a stable id, its tab
-/// title, and its content factory.
+/// title, its content factory, and what its content needs to stay legible.
 #[derive(Clone)]
 pub struct DockPanel {
 	pub id: PanelId,
 	pub title: String,
 	pub content: PanelView,
+	pub min: MinSize,
 }

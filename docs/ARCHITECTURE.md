@@ -90,6 +90,8 @@ cache missed. Precedence is therefore: client cache → host default → host bu
   that clears cells (`reset`, and hence the band latch) must clear them too.
 - Pixel layout is the browser's job; the model is unit-free steps. Measured boxes are the
   one re-entry of pixels.
+- A min belongs to the panel (`DockPanel::min`), not the tile. A cell's floor is derived from its
+  tabs' declared mins at the live step, on every measure and tab change; never stored as layout.
 - A cached layout that is corrupt, from a future schema, or empty is a **miss** that says
   so on the console — never a silent wipe.
 

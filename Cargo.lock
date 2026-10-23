@@ -1363,7 +1363,7 @@ dependencies = [
 
 [[package]]
 name = "dockviewers"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "dockviewers_core",
  "dockviewers_dioxus",
@@ -1372,7 +1372,7 @@ dependencies = [
 
 [[package]]
 name = "dockviewers_core"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "clap",
  "serde",
@@ -1384,7 +1384,7 @@ dependencies = [
 
 [[package]]
 name = "dockviewers_dioxus"
-version = "0.2.3"
+version = "0.3.0"
 dependencies = [
  "dioxus",
  "dockviewers_core",
@@ -1408,7 +1408,7 @@ dependencies = [
 
 [[package]]
 name = "dockviewers_leptos"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "dockviewers_core",
  "leptos",

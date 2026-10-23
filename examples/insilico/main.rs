@@ -128,6 +128,7 @@ fn panel_of(kind: Kind, id: PanelId) -> DockPanel {
 		id,
 		title: kind.title().into(),
 		content: rsx! { KindView { kind } },
+		min: kind.min(),
 	}
 }
 
@@ -146,7 +147,7 @@ fn spawn(kind: Kind, w: u32, h: u32, mut panels: Signal<Vec<DockPanel>>, mut cou
 	let gid = api.mint_group_id();
 	// A desktop-tuned width can exceed a phone band's columns; clamp so it doesn't spill the grid.
 	let w = w.min(api.cols().max(1));
-	api.place(Group::new(gid, id), w, h, kind.min());
+	api.place(Group::new(gid, id), w, h);
 }
 
 /// Rebuild the panel list from a freshly loaded grid, decoding each tab id back to its kind so a

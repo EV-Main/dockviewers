@@ -5,7 +5,7 @@
 
 use std::{collections::HashSet, sync::Arc};
 
-use dockviewers_leptos::{Config, DockPanel, Group, GroupId, Keybind, Keybinds, MinSize, PackedApi, PackedArea, PanelId, Step};
+use dockviewers_leptos::{Config, DockPanel, Group, GroupId, Keybind, Keybinds, MinSize, PackedApi, PackedArea, PanelId};
 use js_sys::{Function, Map};
 use leptos::{
 	mount::{UnmountHandle, mount_to},
@@ -21,7 +21,8 @@ const GRID_COLUMNS: u32 = 24;
 const ROW_PX: f64 = 30.0;
 const ROW_GAP_PX: f64 = 8.0;
 
-/// One panel and its save-model `gridPos`, in Grafana grid units.
+/// One panel: its save-model `gridPos`, in Grafana grid units, and the CSS px its content needs
+/// (`0` = nothing beyond the chrome).
 #[wasm_bindgen]
 pub struct Seed {
 	id: PanelId,
@@ -30,14 +31,26 @@ pub struct Seed {
 	y: u32,
 	w: u32,
 	h: u32,
+	min_w: f64,
+	min_h: f64,
 }
 
 #[wasm_bindgen]
 impl Seed {
 	#[wasm_bindgen(constructor)]
-	pub fn new(id: String, title: String, x: u32, y: u32, w: u32, h: u32) -> Self {
+	pub fn new(id: String, title: String, x: u32, y: u32, w: u32, h: u32, min_w: f64, min_h: f64) -> Self {
 		assert!(w >= 1 && x + w <= GRID_COLUMNS && h >= 1, "gridPos of {id:?} is off Grafana's grid: x={x} w={w} h={h}");
-		Self { id: PanelId(id), title, x, y, w, h }
+		assert!(min_w >= 0.0 && min_h >= 0.0, "min of {id:?} is negative: {min_w}x{min_h}");
+		Self {
+			id: PanelId(id),
+			title,
+			x,
+			y,
+			w,
+			h,
+			min_w,
+			min_h,
+		}
 	}
 }
 
@@ -87,14 +100,10 @@ pub fn mount(root: HtmlElement, mut seeds: Vec<Seed>, storage_key: String, on_sl
 			}
 			let step_h = root_el.client_height() as f64 / rows as f64;
 			let cols = a.cols();
-			let min = MinSize::Steps {
-				w: Step(cols.div_ceil(GRID_COLUMNS)),
-				h: Step((ROW_PX / step_h).ceil() as u32),
-			};
 			for s in &seeds {
 				let w = (s.w as f64 * cols as f64 / GRID_COLUMNS as f64).round() as u32;
 				let h = ((s.h as f64 * ROW_PX + (s.h - 1) as f64 * ROW_GAP_PX) / step_h).round() as u32;
-				a.place(Group::new(a.mint_group_id(), s.id.clone()), w, h, min);
+				a.place(Group::new(a.mint_group_id(), s.id.clone()), w, h);
 			}
 		});
 		let request_tab: Arc<dyn Fn(GroupId) + Send + Sync> = Arc::new(move |gid: GroupId| {
@@ -115,6 +124,7 @@ fn slot(seed: &Seed, on_slot: &SendWrapper<Function>) -> DockPanel {
 	DockPanel {
 		id: seed.id.clone(),
 		title: seed.title.clone(),
+		min: MinSize::Px { w: seed.min_w, h: seed.min_h },
 		content: Arc::new(move || {
 			let node = NodeRef::<leptos::html::Div>::new();
 			let (id, on_slot) = (id.clone(), on_slot.clone());
@@ -142,6 +152,21 @@ impl Dock {
 			return;
 		}
 		self.panels.update(|ps| ps.iter_mut().zip(next).for_each(|(p, t)| p.title = t));
+	}
+
+	/// Re-declare what `id`'s content needs, in CSS px — a compiled size landing after mount.
+	pub fn set_min(&self, id: String, w: f64, h: f64) {
+		assert!(w >= 0.0 && h >= 0.0, "min of {id:?} is negative: {w}x{h}");
+		let id = PanelId(id);
+		let min = MinSize::Px { w, h };
+		let i = self
+			.panels
+			.with_untracked(|ps| ps.iter().position(|p| p.id == id))
+			.unwrap_or_else(|| panic!("set_min of unknown panel {id:?}"));
+		if self.panels.with_untracked(|ps| ps[i].min == min) {
+			return;
+		}
+		self.panels.update(|ps| ps[i].min = min);
 	}
 
 	/// Panel ids the layout hosts; the rest are closed, and are what `+` offers.

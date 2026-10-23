@@ -8,7 +8,7 @@
 use crate::model::{Group, GroupId, PanelId};
 
 /// One grid unit — the minimum size/resize increment (`STEP` px each).
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Step(pub u32);
 
 impl From<Step> for u32 {
@@ -17,29 +17,29 @@ impl From<Step> for u32 {
 	}
 }
 
-/// A window type's minimum size, author-facing in whichever unit reads naturally for
-/// that type. Resolved to whole `Step`s against `STEP` px (and 1rem ≈ root font px) when
-/// a cell is placed.
-#[derive(Clone, Copy, Debug)]
+/// What a panel needs to stay legible. `Steps` sizes the whole tile; `Px`/`Rem` size the panel's
+/// slot below the title bar, so the engine adds the chrome it alone knows. Re-resolved against the live
+/// step on every measure, so a px need holds however the view's height or font changes.
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum MinSize {
 	Steps { w: Step, h: Step },
 	Rem { w: f64, h: f64 },
+	Px { w: f64, h: f64 },
 }
 
 impl MinSize {
-	/// Whole-step minimum, ceil'd so a rem floor never rounds *down* below the author's intent. Steps
-	/// are sized independently per axis (`step_w`/`step_h`), so each dimension resolves against its own.
-	pub fn resolve(&self, step_w: f64, step_h: f64, rem_px: f64) -> (u32, u32) {
-		match self {
-			MinSize::Steps { w, h } => (w.0.max(1), h.0.max(1)),
-			MinSize::Rem { w, h } => (((w * rem_px / step_w).ceil() as u32).max(1), ((h * rem_px / step_h).ceil() as u32).max(1)),
-		}
+	/// Whole steps, ceil'd so a length floor never rounds *down* below the content it describes.
+	pub(crate) fn resolve(&self, step_w: f64, step_h: f64, rem_px: f64, title_h: f64) -> (u32, u32) {
+		let (w_px, h_px) = match *self {
+			MinSize::Steps { w, h } => return (w.0.max(1), h.0.max(1)),
+			MinSize::Rem { w, h } => (w * rem_px, h * rem_px),
+			MinSize::Px { w, h } => (w, h),
+		};
+		(((w_px / step_w).ceil() as u32).max(1), (((h_px + title_h) / step_h).ceil() as u32).max(1))
 	}
 }
 
-/// A placed tile: its tab-group plus its integer grid rect and the per-type minimum
-/// (resolved from [`MinSize`] at place time, so resize clamps against the *type's* floor,
-/// not a global constant).
+/// A placed tile: its tab-group, its integer grid rect, and its floor.
 #[derive(Clone, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct Cell {
 	pub group: Group,
@@ -47,17 +47,22 @@ pub struct Cell {
 	pub y: u32,
 	pub w: u32,
 	pub h: u32,
+	/// The max of the tabs' resolved [`MinSize`]s at the live step: derived, never layout.
+	#[serde(skip)]
 	pub min_w: u32,
+	#[serde(skip)]
 	pub min_h: u32,
-	/// Pre-clamp width/left-edge, set by [`refit`](PackedGrid::refit)/[`place`](PackedGrid::place)
-	/// only when a view too narrow to hold the tile forced `w`/`x` smaller than the tile wants.
-	/// They carry the full-scale intent across a band change, so widening the view restores the
-	/// tile exactly (`None` once it fits again). Any explicit edit (resize/drop) clears them — the
-	/// new geometry *is* the intent. `#[serde(default)]` keeps pre-field layouts loadable.
+	/// Pre-clamp width/left-edge/height, set by [`refit`](PackedGrid::refit)/[`place`](PackedGrid::place)
+	/// only when the view (width) or a floor (height) forced the rect off what the tile wants. They
+	/// carry the intent across the change, so the view or floor coming back restores the tile exactly
+	/// (`None` once it fits again). Any explicit edit (resize/drop) clears them — the new geometry *is*
+	/// the intent. `#[serde(default)]` keeps pre-field layouts loadable.
 	#[serde(default)]
 	pub desired_w: Option<u32>,
 	#[serde(default)]
 	pub desired_x: Option<u32>,
+	#[serde(default)]
+	pub desired_h: Option<u32>,
 	/// Vertical stacking order, fixed at the last structural edit (see
 	/// `reassign_ranks`). [`refit`](PackedGrid::refit) settles by this,
 	/// not by the transient `y`, so collapsing tiles into a narrow band and back reproduces their
@@ -95,27 +100,25 @@ impl PackedGrid {
 		self.cells.iter().position(|c| c.group.id == id)
 	}
 
-	/// Auto-pack `group` at the `pack`-chosen `(x, y)`, storing its resolved per-type min. A tile
-	/// wider than the view is clamped to fit (its wanted width kept in `desired_w`, so a later
-	/// widening restores it), since `pack` can't seat something it can't contain.
+	/// Auto-pack `group` at the `pack`-chosen `(x, y)` with floor `min`. The starting size is a *want*,
+	/// the min a floor — same rule as `resize`/`refit`: the floor wins, and the view caps the width.
+	/// A clamped want is kept in `desired_*`, so a later widening or a lower floor restores it.
 	pub fn place(&mut self, group: Group, w: u32, h: u32, min: (u32, u32), cols: u32) {
-		// The starting size is a *want*, the min a floor: a [`MinSize::Rem`] resolves against the live
-		// step, so it can land above the size the host asked for. Same rule as `resize`/`refit` — the
-		// floor wins, and the view caps it.
 		let want_w = w.max(min.0);
 		let eff_w = want_w.min(cols);
-		let h = h.max(min.1);
-		let (x, y) = pack(&self.cells, eff_w, h, cols);
+		let eff_h = h.max(min.1);
+		let (x, y) = pack(&self.cells, eff_w, eff_h, cols);
 		self.cells.push(Cell {
 			group,
 			x,
 			y,
 			w: eff_w,
-			h,
+			h: eff_h,
 			min_w: min.0,
 			min_h: min.1,
 			desired_w: (eff_w != want_w).then_some(want_w),
 			desired_x: None,
+			desired_h: (eff_h != h).then_some(h),
 			rank: 0,
 		});
 		self.reassign_ranks();
@@ -154,49 +157,32 @@ impl PackedGrid {
 		// widening keeps the size the user just chose rather than snapping back to an old want.
 		c.desired_w = None;
 		c.desired_x = None;
+		c.desired_h = None;
 		gravity(&mut self.cells, Some(idx));
 		self.reassign_ranks();
 		debug_assert!(self.overlaps().is_none(), "resize left an overlap");
 	}
 
-	/// Re-floor the tile hosting `panel` — its content just told us how small it may actually get.
-	/// Unlike [`resize`](Self::resize) this is not fresh user intent, so `desired_w`/`desired_x` are
-	/// left alone; and unlike `resize` the new floor can exceed the span left of the tile's pinned
-	/// left edge, which [`refit`](Self::refit) is already the rule for (clamp `x` left until the
-	/// floor fits, or fill the view if it can't). A panel the layout doesn't host is a no-op — a
-	/// binding legitimately knows panels the grid doesn't.
-	pub fn set_min(&mut self, panel: &PanelId, min: (u32, u32), cols: u32) {
-		let Some(idx) = self.cells.iter().position(|c| c.group.tabs.contains(panel)) else { return };
-		let c = &mut self.cells[idx];
-		if (c.min_w, c.min_h) == min {
-			return;
-		}
-		c.min_w = min.0;
-		c.min_h = min.1;
-		c.h = c.h.max(min.1);
-		self.refit(cols);
-	}
-
-	/// Reflow every tile into a new column count, then settle under `gravity`. Each tile aims for
-	/// its *wanted* width/left-edge (`desired_*` if a narrower view earlier clamped it, else its
-	/// current `w`/`x`), clamps that to fit `cols`, and re-stores any leftover want in `desired_*`.
-	/// So the clamp is non-destructive: widening back to a span that fits restores `w`/`x` exactly
-	/// (and `gravity` then recomputes the same `y`), making a resize round-trip a no-op — the fix for
-	/// the right-edge clip *and* the "small-then-big resets my layout" loss. Called whenever the
-	/// responsive band changes `cols`.
+	/// Reflow every tile into a column count and its current floors, then settle by rank. Each tile
+	/// aims for its *wanted* rect (`desired_*` if the view or a floor earlier forced it, else its
+	/// current `w`/`x`/`h`), clamps that to `cols` and its floor, and re-stores any leftover want in
+	/// `desired_*`. So the clamp is non-destructive: a view or floor coming back restores the tile
+	/// exactly, making a measure round-trip a no-op.
 	pub fn refit(&mut self, cols: u32) {
 		for c in &mut self.cells {
 			let want_w = c.desired_w.unwrap_or(c.w);
 			let want_x = c.desired_x.unwrap_or(c.x);
-			// Re-honor the type's min floor (capped by the view), so a width an earlier narrow view
-			// forced below it heals the moment the view is wide enough again.
-			let floor = c.min_w.min(cols).max(1);
-			let eff_w = want_w.clamp(floor, cols);
+			let want_h = c.desired_h.unwrap_or(c.h);
+			// The floor is capped by the view: a min wider than `cols` fills it rather than spilling.
+			let eff_w = want_w.clamp(c.min_w.min(cols).max(1), cols);
 			let eff_x = want_x.min(cols - eff_w);
+			let eff_h = want_h.max(c.min_h);
 			c.desired_w = (eff_w != want_w).then_some(want_w);
 			c.desired_x = (eff_x != want_x).then_some(want_x);
+			c.desired_h = (eff_h != want_h).then_some(want_h);
 			c.w = eff_w;
 			c.x = eff_x;
+			c.h = eff_h;
 		}
 		// Settle in the stored stacking order, not by the transient `y`: each tile rests on the skyline
 		// of the lower-ranked tiles sharing its columns. `rank` is fixed until the next structural edit,
@@ -384,6 +370,7 @@ impl PackedGrid {
 					min_h,
 					desired_w: None,
 					desired_x: None,
+					desired_h: None,
 					rank: 0,
 				});
 				let pin = self.cells.len() - 1;
@@ -402,6 +389,7 @@ impl PackedGrid {
 					min_h,
 					desired_w: None,
 					desired_x: None,
+					desired_h: None,
 					rank: 0,
 				});
 				gravity(&mut self.cells, None);
@@ -511,6 +499,7 @@ mod tests {
 			min_h: 1,
 			desired_w: None,
 			desired_x: None,
+			desired_h: None,
 			rank: 0,
 		}
 	}

@@ -3,9 +3,9 @@
 //! [`GridState::Settled`] — that single requirement is why the gesture layer used to be unfuzzable.
 //!
 //! [`check_settled`] is the model contract: settled, overlap-free and gap-free (no tile floats
-//! above the skyline), every cell honours its per-type minimum and stays within `cols`, every group
-//! is non-empty with `active` in range, ids and panels are unique, and the layout survives a serde
-//! round-trip. [`check_in_flight`] is the *render* contract, and runs in both states: it reads only
+//! above the skyline), every cell's floor is exactly what its tabs' declared mins need at the live
+//! step, every cell honours it and stays within `cols`, every group is non-empty with `active` in
+//! range, ids and panels are unique, and the layout survives a serde round-trip. [`check_in_flight`] is the *render* contract, and runs in both states: it reads only
 //! the view-model getters a binding renders, so it catches drift between them without needing any
 //! new `pub` on [`PackedState`].
 //!
@@ -16,13 +16,22 @@
 use std::collections::{HashMap, HashSet};
 
 use dockviewers_core::{
-	PackedState,
+	MinSize, PackedState,
 	model::{packed::GridState, serial},
 };
 
-pub fn check_settled(state: &PackedState) -> Result<(), String> {
+use crate::sim::World;
+
+/// Fp noise when a need lands exactly on a step boundary; a real miss is a whole step.
+const HAIRLINE: f64 = 1e-6;
+
+pub fn check_settled(world: &World) -> Result<(), String> {
+	let state = &world.state;
 	let grid = state.grid();
 	let cols = state.cols();
+	let (sw, sh) = world.step_px();
+	let title_h = state.title_h();
+	let rem_px = title_h / world.cfg.title_h_rem;
 	if grid.state != GridState::Settled {
 		return Err(format!("grid not settled: {:?}", grid.state));
 	}
@@ -36,6 +45,22 @@ pub fn check_settled(state: &PackedState) -> Result<(), String> {
 	let mut groups = HashSet::new();
 	let mut panels = HashSet::new();
 	for c in &grid.cells {
+		// The px each tab needs of the whole tile; the floor is the fewest steps holding all of them.
+		let (need_w, need_h) = c.group.tabs.iter().fold((0.0_f64, 0.0_f64), |(w, h), p| {
+			let (pw, ph) = match world.mins[p] {
+				MinSize::Steps { w, h } => (w.0 as f64 * sw, h.0 as f64 * sh),
+				MinSize::Rem { w, h } => (w * rem_px, h * rem_px + title_h),
+				MinSize::Px { w, h } => (w, h + title_h),
+			};
+			(w.max(pw), h.max(ph))
+		});
+		let tight = |floor: u32, step: f64, need: f64| floor as f64 * step >= need - HAIRLINE && (floor <= 1 || ((floor - 1) as f64) * step < need + HAIRLINE);
+		if !tight(c.min_w, sw, need_w) || !tight(c.min_h, sh, need_h) {
+			return Err(format!(
+				"floor {}x{} isn't what its tabs need ({need_w:.1}x{need_h:.1}px at {sw:.2}x{sh:.2}px steps): {c:?}",
+				c.min_w, c.min_h
+			));
+		}
 		// A tile must meet its min, unless the view itself is narrower than that min — then filling
 		// the view (w == cols) is the best it can do, so a clamp to `cols` is allowed.
 		if c.w < c.min_w.min(cols) || c.h < c.min_h {
@@ -60,7 +85,11 @@ pub fn check_settled(state: &PackedState) -> Result<(), String> {
 		}
 	}
 
-	let back = serial::load(&serial::save(grid)).map_err(|e| format!("round-trip load failed: {e:?}"))?;
+	// Floors are derived, so they're the one thing a round-trip may drop.
+	let mut back = serial::load(&serial::save(grid)).map_err(|e| format!("round-trip load failed: {e:?}"))?;
+	for (b, c) in back.cells.iter_mut().zip(&grid.cells) {
+		(b.min_w, b.min_h) = (c.min_w, c.min_h);
+	}
 	if &back != grid {
 		return Err("round-trip changed the grid".to_string());
 	}
@@ -82,7 +111,6 @@ pub fn check_in_flight(state: &PackedState) -> Result<(), String> {
 	let rects: Vec<(usize, [f64; 4])> = frames.iter().enumerate().filter_map(|(i, f)| rect(&f.style).map(|r| (i, r))).collect();
 	// Abutting edges are the common case and `x·step + w·step != (x+w)·step` in binary floating point,
 	// so a hairline counts as touching. A real overlap is a whole step wide, orders of magnitude above.
-	const HAIRLINE: f64 = 1e-6;
 	for (n, &(i, a)) in rects.iter().enumerate() {
 		for &(j, b) in &rects[n + 1..] {
 			let over = |al: f64, aw: f64, bl: f64, bw: f64| (al + aw).min(bl + bw) - al.max(bl) > HAIRLINE;

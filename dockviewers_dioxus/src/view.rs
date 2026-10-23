@@ -18,19 +18,23 @@ use crate::panel::DockPanel;
 #[derive(Clone, Copy)]
 pub struct PackedApi {
 	state: Signal<PackedState>,
+	panels: Signal<Vec<DockPanel>>,
 }
 
 impl PackedApi {
-	pub fn place(&mut self, group: Group, w: u32, h: u32, min: MinSize) {
-		self.state.write().place(group, w, h, min);
-	}
-
-	pub fn set_min(&mut self, panel: &PanelId, min: MinSize) {
-		self.state.write().set_min(panel, min);
+	/// `group`'s panels must already be in `panels`: their declared mins floor the tile.
+	pub fn place(&mut self, group: Group, w: u32, h: u32) {
+		let mins = mins_of(&self.panels.peek());
+		let mut s = self.state.write();
+		s.set_mins(mins);
+		s.place(group, w, h);
 	}
 
 	pub fn add_tab(&mut self, group: GroupId, panel: PanelId) {
-		self.state.write().add_tab(group, panel);
+		let mins = mins_of(&self.panels.peek());
+		let mut s = self.state.write();
+		s.set_mins(mins);
+		s.add_tab(group, panel);
 	}
 
 	pub fn close_active(&mut self, group: GroupId) {
@@ -77,10 +81,17 @@ impl PackedApi {
 	}
 
 	/// Replace the layout with a previously [`save`](Self::save)d one; errors on a corrupt or
-	/// future-version payload.
+	/// future-version payload. Every panel it hosts must already be in `panels`.
 	pub fn load(&mut self, json: &str) -> Result<(), dockviewers_core::model::serial::LoadError> {
-		self.state.write().load(json)
+		let mins = mins_of(&self.panels.peek());
+		let mut s = self.state.write();
+		s.set_mins(mins);
+		s.load(json)
 	}
+}
+
+fn mins_of(panels: &[DockPanel]) -> HashMap<PanelId, MinSize> {
+	panels.iter().map(|p| (p.id.clone(), p.min)).collect()
 }
 
 /// Root of the packed layout. Owns the `Signal<PackedState>` (root-scope, so the [`PackedApi`] it
@@ -101,7 +112,7 @@ pub fn PackedArea(panels: Signal<Vec<DockPanel>>, on_band: Option<Callback<Packe
 	// Root-scope, not this scope: `PackedApi` is driven from outside `PackedArea`'s subtree, so the
 	// cell must outlive this component (this root component never unmounts).
 	let mut state = use_hook(move || Signal::new_in_scope(PackedState::new(cfg), ScopeId::ROOT));
-	let api = PackedApi { state };
+	let api = PackedApi { state, panels };
 	let request_tab = use_context::<Callback<GroupId>>();
 
 	#[cfg(target_arch = "wasm32")]
@@ -157,6 +168,12 @@ pub fn PackedArea(panels: Signal<Vec<DockPanel>>, on_band: Option<Callback<Packe
 		window
 			.remove_event_listener_with_callback_and_bool("keydown", listeners.1.as_ref().unchecked_ref(), true)
 			.expect("remove keydown listener");
+	});
+
+	// A panel's declared min is host intent the state re-derives floors from.
+	use_effect(move || {
+		let mins = mins_of(&panels.read());
+		state.write().set_mins(mins);
 	});
 
 	// Undo history: snapshot a settled layout after each structural edit. `wants_undo_snapshot` is
@@ -382,11 +399,14 @@ fn scroll_y(root: Signal<Option<web_sys::Element>>) -> f64 {
 fn measure(el: &web_sys::Element, mut state: Signal<PackedState>, api: PackedApi, on_band: Option<Callback<PackedApi>>) {
 	let rect = el.get_bounding_client_rect();
 	state.write().set_measure((rect.x(), rect.y()), (el.client_width() as f64, el.client_height() as f64));
-	// The latch resolves the band's cache itself; `on_band` only fills in what it left behind.
-	if state.write().take_band().is_some()
-		&& let Some(cb) = on_band
-	{
-		cb.call(api);
+	// The latch resolves the band's cache itself; `on_band` only fills in what it left behind — and
+	// only then lists every panel a restored layout hosts, so its floors land after.
+	if state.write().take_band().is_some() {
+		if let Some(cb) = on_band {
+			cb.call(api);
+		}
+		let mins = mins_of(&api.panels.peek());
+		state.write().set_mins(mins);
 	}
 }
 

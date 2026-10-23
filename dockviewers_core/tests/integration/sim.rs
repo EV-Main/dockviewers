@@ -7,6 +7,8 @@
 //! nobody drives. Everything the grid used to be poked with is still covered — through the gesture
 //! layer that actually produces it.
 
+use std::collections::HashMap;
+
 use dockviewers_core::{
 	Band, Config, Group, GroupId, PackedState, PanelId, Step,
 	model::packed::{DropTarget, MinSize, PackedGrid},
@@ -30,6 +32,8 @@ pub struct World {
 	pub state: PackedState,
 	pub cfg: Config,
 	pub next_panel: u64,
+	/// What a binding's panel list declares: every minted panel's min, mirrored into the state.
+	pub mins: HashMap<PanelId, MinSize>,
 	pub origin: (f64, f64),
 	pub size: (f64, f64),
 	pub cursor: (f64, f64),
@@ -50,10 +54,26 @@ pub struct World {
 }
 
 impl World {
-	pub fn mint_panel(&mut self) -> PanelId {
+	/// A new panel in the host's list, declaring `min` — mirrored the way a binding does on every
+	/// panels change.
+	pub fn mint_panel(&mut self, min: MinSize) -> PanelId {
 		let id = PanelId(format!("p{}", self.next_panel));
 		self.next_panel += 1;
+		self.mins.insert(id.clone(), min);
+		self.state.set_mins(self.mins.clone());
 		id
+	}
+
+	/// `grid` as a fresh state at this world's geometry and mins settles it — the public path a
+	/// stored layout comes back through.
+	pub fn settled(&self, grid: &PackedGrid) -> Result<PackedGrid, String> {
+		let mut fresh = PackedState::new(self.cfg.clone());
+		fresh.set_mins(self.mins.clone());
+		fresh.set_measure(self.origin, self.size);
+		fresh
+			.load(&dockviewers_core::model::serial::save(grid))
+			.map_err(|e| format!("load of our own save failed: {e:?}"))?;
+		Ok(fresh.grid().clone())
 	}
 
 	/// Live px per grid step, the same `(width / cols, height / rows)` [`PackedState::set_measure`]
@@ -119,14 +139,15 @@ impl World {
 	/// `on_band` does on a cache miss.
 	fn seed_tiles(&mut self) {
 		let (cols, rows) = (self.state.cols(), self.cfg.rows);
+		let min = MinSize::Steps { w: Step(1), h: Step(1) };
 		for (fw, fh) in [(0.25, 0.3), (0.3, 0.25), (0.2, 0.4), (0.35, 0.3)] {
 			let gid = self.state.mint_group_id();
-			let panel = self.mint_panel();
+			let panel = self.mint_panel(min);
 			let (w, h) = (((cols as f64 * fw) as u32).max(1), ((rows as f64 * fh) as u32).max(1));
-			self.state.place(Group::new(gid, panel), w, h, MinSize::Steps { w: Step(1), h: Step(1) });
+			self.state.place(Group::new(gid, panel), w, h);
 		}
 		// give the first tile a second tab so tab-tears have something to bite on from the start.
-		let extra = self.mint_panel();
+		let extra = self.mint_panel(min);
 		self.state.add_tab(GroupId(0), extra);
 	}
 
@@ -164,7 +185,7 @@ pub fn run(seed: u64, size: usize, verbose: bool, observe: &mut dyn FnMut(Option
 	}
 
 	let mut world = seed_world(&mut frng);
-	if let Err(what) = oracle::check_settled(&world.state) {
+	if let Err(what) = oracle::check_settled(&world) {
 		return Err(Failure { step: 0, what });
 	}
 	observe(None, &world);
@@ -184,7 +205,7 @@ pub fn run(seed: u64, size: usize, verbose: bool, observe: &mut dyn FnMut(Option
 			oracle::check_in_flight(&world.state)
 		} else {
 			world.settle();
-			oracle::check_settled(&world.state)
+			oracle::check_settled(&world)
 		};
 		if let Err(what) = checked {
 			return Err(Failure { step, what });
@@ -204,6 +225,7 @@ fn seed_world(frng: &mut Frng) -> World {
 		state: PackedState::new(cfg.clone()),
 		cfg,
 		next_panel: 0,
+		mins: HashMap::new(),
 		// A non-zero root origin, so a lost `- origin` in the pointer mapping can't pass unnoticed.
 		origin: (17.0, 23.0),
 		size: (0.0, 0.0),
