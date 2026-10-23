@@ -32,10 +32,12 @@ pub const CSS: &str = r#"
 	/* opaque where a scrollbar still runs under it (no track margins outside Chromium/WebKit) */
 	background: linear-gradient(var(--tl-resize-bg, #555), var(--tl-resize-bg, #555)), var(--tl-group-bg, #1e1e1e); }
 /* The edge grips: thin strips over the content's own edges, bare until hovered. */
-.tl-resize-bottom, .tl-resize-right { position: absolute; z-index: 100; }
+.tl-resize-bottom, .tl-resize-left, .tl-resize-right { position: absolute; z-index: 100; }
 .tl-resize-bottom { left: 0; right: 0; bottom: 0; height: calc(var(--tl-title-h, 2rem) / 8); cursor: ns-resize; }
-.tl-resize-right { right: 0; top: var(--tl-title-h, 2rem); bottom: 0; width: calc(var(--tl-title-h, 2rem) / 8); cursor: ew-resize; }
-.tl-resize-bottom:hover, .tl-resize-right:hover { background: var(--tl-resize-bg, #555); }
+.tl-resize-left, .tl-resize-right { top: var(--tl-title-h, 2rem); bottom: 0; width: calc(var(--tl-title-h, 2rem) / 8); cursor: ew-resize; }
+.tl-resize-left { left: 0; }
+.tl-resize-right { right: 0; }
+.tl-resize-bottom:hover, .tl-resize-left:hover, .tl-resize-right:hover { background: var(--tl-resize-bg, #555); }
 /* Content keeps the whole body; only its scrollbars give way: they stop short of the corner, and their
    outer edge (under the edge grip) is left bare, so the thumb is never under a grip. */
 .tl-render-overlay ::-webkit-scrollbar { width: calc(var(--tl-title-h, 2rem) / 8 + 8px); height: calc(var(--tl-title-h, 2rem) / 8 + 8px); }

@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use tilers_core::{
 	Grip, Group, GroupId, PackedState, PanelId, Step,
 	keys::{Binding, Builtin, Chord, Command, Help, Hint, KeyInput, Keymap, Node},
-	model::packed::{DragSource, DropTarget, MinSize, PackedGrid},
+	model::packed::{Cell, DragSource, DropTarget, MinSize, PackedGrid},
 };
 use v_utils::fuzz::Frng;
 
@@ -128,18 +128,53 @@ pub fn apply(action: &Action, world: &mut World, mid: &mut dyn FnMut(&World)) ->
 		Action::Drag { grab, path, commit } => return drag(grab, path, *commit, world, mid),
 		Action::Resize { idx, grip, start, path, commit } => {
 			world.structural_edit();
-			let size = |w: &World| (w.state.grid().cells[*idx].w, w.state.grid().cells[*idx].h);
-			let (w0, h0) = size(world);
 			world.state.resize_start(*idx, *grip, start.0, start.1);
+			let press = world.state.grid().cells.clone();
+			// The grabbed edge, and every tile across it at press: each must stay on it as it moves.
+			let edge = |c: &Cell| match grip {
+				Grip::Left => Some(c.x),
+				Grip::Right | Grip::Corner => Some(c.x + c.w),
+				Grip::Bottom => None,
+			};
+			let g = &press[*idx];
+			let across: Vec<(usize, bool)> = edge(g).map_or_else(Vec::new, |e| {
+				(0..press.len())
+					.filter(|&j| j != *idx && press[j].y < g.y + g.h && g.y < press[j].y + press[j].h)
+					.filter_map(|j| (press[j].x == e).then_some((j, true)).or((press[j].x + press[j].w == e).then_some((j, false))))
+					.collect()
+			});
 			for p in path {
 				world.cursor = *p;
 				world.state.resize_move(*p);
 				oracle::check_in_flight(&world.state)?;
-				let (w, h) = size(world);
-				if (*grip == Grip::Right && h != h0) || (*grip == Grip::Bottom && w != w0) {
-					return Err(format!("the {grip:?} grip changed the other axis: {w0}x{h0} → {w}x{h}"));
+				let now = &world.state.grid().cells;
+				for (j, (a, b)) in press.iter().zip(now).enumerate() {
+					if matches!(grip, Grip::Left | Grip::Right) && a.h != b.h {
+						return Err(format!("the {grip:?} grip changed tile {j}'s height: {a:?} → {b:?}"));
+					}
+					if *grip == Grip::Bottom && (a.x, a.w) != (b.x, b.w) {
+						return Err(format!("the Bottom grip changed tile {j}'s columns: {a:?} → {b:?}"));
+					}
+				}
+				let e = edge(&now[*idx]);
+				for &(j, right) in &across {
+					if Some(if right { now[j].x } else { now[j].x + now[j].w }) != e {
+						return Err(format!("tile {j} was across the {grip:?} edge at press but left it: {:?} vs grabbed {:?}", now[j], now[*idx]));
+					}
 				}
 				mid(world);
+			}
+			// A gesture is a function of where the pointer is, not of how it got there.
+			if let Some(&last) = path.last() {
+				let there = world.state.grid().cells.clone();
+				world.state.resize_move(*start);
+				if world.state.grid().cells != press {
+					return Err(format!("back at the press point, the {grip:?} grip left {:?}, not {press:?}", world.state.grid().cells));
+				}
+				world.state.resize_move(last);
+				if world.state.grid().cells != there {
+					return Err(format!("returning to {last:?} via the press point gave {:?}, not {there:?}", world.state.grid().cells));
+				}
 			}
 			if *commit {
 				world.state.resize_end();
@@ -236,14 +271,18 @@ pub fn generate(frng: &mut Frng, world: &World, weights: &[u32; N_KINDS]) -> Opt
 			}
 		}
 		RESIZE => {
-			let idx = frng.below(cells.len() as u32) as usize;
+			// Only the grips a binding renders: a frame offers a left grip only on a free left edge.
+			let frames = world.state.frames(&HashMap::new());
+			let f = &frames[frng.below(frames.len() as u32) as usize];
+			let (idx, grip) = (f.idx, f.grips[frng.below(f.grips.len() as u32) as usize]);
 			let c = &cells[idx];
-			let grip = Grip::ALL[frng.below(Grip::ALL.len() as u32) as usize];
-			// Where the grip sits on the tile: its corner, the middle of its right edge, or of its bottom.
+			// Where the grip sits on the tile: its corner, or the middle of the edge it is.
 			let (r, b) = (ox + (c.x + c.w) as f64 * sw, oy + (c.y + c.h) as f64 * sh);
+			let mid_y = oy + (c.y as f64 + c.h as f64 / 2.0) * sh;
 			let start = match grip {
 				Grip::Corner => (r, b),
-				Grip::Right => (r, oy + (c.y as f64 + c.h as f64 / 2.0) * sh),
+				Grip::Left => (ox + c.x as f64 * sw, mid_y),
+				Grip::Right => (r, mid_y),
 				Grip::Bottom => (ox + (c.x as f64 + c.w as f64 / 2.0) * sw, b),
 			};
 			let to = aim(frng, world);

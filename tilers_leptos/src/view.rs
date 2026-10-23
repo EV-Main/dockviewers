@@ -8,7 +8,7 @@
 use std::{collections::HashMap, sync::Arc};
 
 use leptos::prelude::*;
-use tilers_core::{Band, CSS, Config, Grip, Group, GroupId, MinSize, PackedState, PanelId, model::serial::LoadError};
+use tilers_core::{Band, CSS, Config, Group, GroupId, MinSize, PackedState, PanelId, model::serial::LoadError};
 
 use crate::panel::DockPanel;
 
@@ -495,8 +495,9 @@ fn render_frame(frame: tilers_core::Frame, state: RwSignal<PackedState, LocalSto
 				</div>
 				<div class="tl-content-slot"></div>
 			</div>
-			{Grip::ALL
-				.map(|grip| {
+			{frame.grips
+				.iter()
+				.map(|&grip| {
 					view! {
 						<div
 							class=grip.class()
@@ -516,7 +517,7 @@ fn render_frame(frame: tilers_core::Frame, state: RwSignal<PackedState, LocalSto
 						></div>
 					}
 				})
-				.to_vec()}
+				.collect::<Vec<_>>()}
 		</div>
 	}
 	.into_any()

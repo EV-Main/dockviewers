@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 
 use dioxus::{html::input_data::MouseButton, prelude::*};
-use tilers_core::{Band, CSS, Config, Grip, Group, GroupId, MinSize, PackedState, PanelId};
+use tilers_core::{Band, CSS, Config, Group, GroupId, MinSize, PackedState, PanelId};
 
 use crate::panel::DockPanel;
 
@@ -298,7 +298,7 @@ pub fn PackedArea(panels: Signal<Vec<DockPanel>>, on_band: Option<Callback<Packe
 							}
 							div { class: "tl-content-slot" }
 						}
-						for grip in Grip::ALL {
+						for &grip in frame.grips {
 							div {
 								class: grip.class(),
 								onpointerdown: {

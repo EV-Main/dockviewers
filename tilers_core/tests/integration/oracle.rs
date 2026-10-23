@@ -1,12 +1,10 @@
 //! The contract checked after every step, independent of the implementation. Split by gesture
-//! state, because the packed model's no-overlap guarantee is only claimed while
-//! [`GridState::Settled`] — that single requirement is why the gesture layer used to be unfuzzable.
+//! state: a resize in flight is packed, but not yet settled into the undo history.
 //!
-//! [`check_settled`] is the model contract: settled, overlap-free and gap-free (no tile floats
-//! above the skyline), every cell's floor is exactly what its tabs' declared mins need at the live
+//! [`check_settled`] is the model contract: settled, every cell's floor is exactly what its tabs' declared mins need at the live
 //! step, every cell honours it and stays within `cols`, every group is non-empty with `active` in
-//! range, ids and panels are unique, and the layout survives a serde round-trip. [`check_in_flight`] is the *render* contract, and runs in both states: it reads only
-//! the view-model getters a binding renders, so it catches drift between them without needing any
+//! range, ids and panels are unique, and the layout survives a serde round-trip. [`check_in_flight`] runs in both states: the grid is overlap-free and gap-free (no tile floats
+//! above the skyline), and the *render* contract holds — it reads only the view-model getters a binding renders, so it catches drift between them without needing any
 //! new `pub` on [`PackedState`].
 //!
 //! Not checkable from out here: a dangling `focused` id has no getter. It surfaces instead as a
@@ -34,12 +32,6 @@ pub fn check_settled(world: &World) -> Result<(), String> {
 	let rem_px = title_h / world.cfg.title_h_rem;
 	if grid.state != GridState::Settled {
 		return Err(format!("grid not settled: {:?}", grid.state));
-	}
-	if let Some((i, j)) = grid.overlaps() {
-		return Err(format!("overlap: {:?} vs {:?}", grid.cells[i], grid.cells[j]));
-	}
-	if let Some(i) = grid.unsupported() {
-		return Err(format!("floating tile (gap above): {:?}", grid.cells[i]));
 	}
 
 	let mut groups = HashSet::new();
@@ -101,10 +93,17 @@ pub fn check_settled(world: &World) -> Result<(), String> {
 	check_in_flight(state)
 }
 
-/// The render contract, checked after every pointer move as well as at rest: the rects a binding
+/// Checked after every pointer move as well as at rest: the grid is packed, the rects a binding
 /// would actually paint don't overlap, the skeleton and the content overlay agree about where each
 /// panel goes, and the drop feedback matches whether the drag has armed.
 pub fn check_in_flight(state: &PackedState) -> Result<(), String> {
+	let grid = state.grid();
+	if let Some((i, j)) = grid.overlaps() {
+		return Err(format!("overlap: {:?} vs {:?}", grid.cells[i], grid.cells[j]));
+	}
+	if let Some(i) = grid.unsupported() {
+		return Err(format!("floating tile (gap above): {:?}", grid.cells[i]));
+	}
 	let titles = HashMap::new();
 	let frames = state.frames(&titles);
 

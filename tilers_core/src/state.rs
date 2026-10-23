@@ -159,18 +159,51 @@ impl PackedState {
 	/// Auto-pack `group` at a wanted `w×h`, floored by its tabs' declared mins.
 	pub fn place(&mut self, group: Group, w: u32, h: u32) {
 		assert!(self.step_px.0 > 0.0, "place before the first measure: no step size yet");
-		let floor = self.floor(&group.tabs);
-		self.grid.place(group, w, h, floor, self.cols);
+		let (floor, cols) = (self.floor(&group.tabs), self.cols);
+		self.base().place(group, w, h, floor, cols);
+		self.follow();
 	}
 
 	pub fn add_tab(&mut self, group: GroupId, panel: PanelId) {
-		self.grid.add_tab(group, panel);
+		self.base().add_tab(group, panel);
 		self.refloor();
 	}
 
 	pub fn close_active(&mut self, group: GroupId) {
-		self.grid.close_active(group);
+		self.base().close_active(group);
 		self.refloor();
+	}
+
+	/// The layout an edit lands on: while a resize is in flight the live grid is derived from its
+	/// press layout, so the edit goes there and [`follow`](Self::follow) re-derives over it.
+	fn base(&mut self) -> &mut PackedGrid {
+		match &mut self.resize {
+			Some(r) => &mut r.press,
+			None => &mut self.grid,
+		}
+	}
+
+	/// Re-derive the live grid from the press layout at the last cursor, so a gesture stays a function
+	/// of (press layout, grip, cursor) whatever edits landed on that layout meanwhile.
+	fn follow(&mut self) {
+		let Some(r) = &self.resize else { return };
+		let Some(idx) = r.press.cells.iter().position(|c| c.group.id == r.gid) else {
+			// The grabbed tile was closed under the gesture: there is nothing left to resize.
+			self.grid = self.resize.take().expect("matched above").press;
+			return;
+		};
+		let (sw, sh) = self.step_px;
+		let shift = |at: u32, from: f64, to: f64, step: f64| (at as i64 + ((to - from) / step).round() as i64).max(0) as u32;
+		let c = &r.press.cells[idx];
+		let (mut left, mut right, mut h) = (c.x, c.x + c.w, c.h);
+		match r.grip {
+			Grip::Left => left = shift(left, r.press_at.0, r.cursor.0, sw),
+			Grip::Right => right = shift(right, r.press_at.0, r.cursor.0, sw),
+			Grip::Bottom => h = shift(h, r.press_at.1, r.cursor.1, sh),
+			Grip::Corner => (right, h) = (shift(right, r.press_at.0, r.cursor.0, sw), shift(h, r.press_at.1, r.cursor.1, sh)),
+		}
+		self.grid = r.press.resized(idx, left, right, h.max(1), self.cols);
+		self.grid.state = GridState::Resizing;
 	}
 
 	/// Replace every panel's declared min — the binding mirrors its panel list here on each change.
@@ -198,15 +231,25 @@ impl PackedState {
 		if self.step_px.0 <= 0.0 {
 			return;
 		}
-		let floors: Vec<(u32, u32)> = self.grid.cells.iter().map(|c| self.floor(&c.group.tabs)).collect();
-		for (c, (w, h)) in self.grid.cells.iter_mut().zip(floors) {
+		let base = self.resize.as_ref().map_or(&self.grid, |r| &r.press);
+		let floors: Vec<(u32, u32)> = base.cells.iter().map(|c| self.floor(&c.group.tabs)).collect();
+		let cols = self.cols;
+		let base = self.base();
+		for (c, (w, h)) in base.cells.iter_mut().zip(floors) {
 			(c.min_w, c.min_h) = (w, h);
 		}
-		self.grid.refit(self.cols);
+		base.refit(cols);
+		self.follow();
 	}
 
+	/// Tile `idx`'s right edge to `x + new_w` and its height to `new_h`: the grips' resize, at once.
 	pub fn resize(&mut self, idx: usize, new_w: u32, new_h: u32) {
-		self.grid.resize(idx, new_w, new_h, self.cols);
+		let cols = self.cols;
+		let base = self.base();
+		let c = &base.cells[idx];
+		*base = base.resized(idx, c.x, c.x + new_w, new_h, cols);
+		base.reassign_ranks();
+		self.follow();
 	}
 
 	/// Serialize the current layout (see [`serial`]).
@@ -219,12 +262,16 @@ impl PackedState {
 	/// is settled into the live geometry — every panel it hosts must already have a declared min.
 	pub fn load(&mut self, json: &str) -> Result<(), serial::LoadError> {
 		self.grid = serial::load(json)?;
+		self.drag = None;
+		self.resize = None;
 		self.refloor();
 		Ok(())
 	}
 
 	pub fn mint_group_id(&mut self) -> GroupId {
-		self.grid.mint_group_id()
+		let id = self.base().mint_group_id();
+		self.follow();
+		id
 	}
 
 	pub fn cols(&self) -> u32 {
@@ -464,35 +511,35 @@ impl PackedState {
 		self.drag = None;
 	}
 
-	/// Begin a resize of tile `idx` from `grip`: capture the pointer start + the tile's size then.
+	/// Begin a resize of tile `idx` from `grip` at the pointer `(px, py)`.
 	pub fn resize_start(&mut self, idx: usize, grip: Grip, px: f64, py: f64) {
 		if self.drag.is_some() {
 			return; // one gesture at a time
 		}
-		let (w, h) = {
-			let c = &self.grid.cells[idx];
-			(c.w, c.h)
-		};
-		self.resize = Some(ResizeStart { idx, grip, px, py, w, h });
+		self.resize_end(); // a second pointer on another grip: the first gesture ends where it is
+		assert!(grip != Grip::Left || self.grid.free_left(idx), "a left grip on a boundary: bindings render `Frame::grips`");
+		self.resize = Some(ResizeStart {
+			gid: self.grid.cells[idx].group.id,
+			grip,
+			press: self.grid.clone(),
+			press_at: (px, py),
+			cursor: (px, py),
+		});
 		self.grid.state = GridState::Resizing;
 	}
 
 	pub fn resize_move(&mut self, cursor: (f64, f64)) {
-		let Some(s) = self.resize else { return };
-		let (sw, sh) = self.step_px;
-		let dw = if s.grip == Grip::Bottom { 0 } else { ((cursor.0 - s.px) / sw).round() as i64 };
-		let dh = if s.grip == Grip::Right { 0 } else { ((cursor.1 - s.py) / sh).round() as i64 };
-		let nw = (s.w as i64 + dw).max(1) as u32;
-		let nh = (s.h as i64 + dh).max(1) as u32;
-		self.grid.resize(s.idx, nw, nh, self.cols);
+		let Some(r) = &mut self.resize else { return };
+		r.cursor = cursor;
+		self.follow();
 	}
 
 	pub fn resize_end(&mut self) {
-		if self.resize.is_none() {
+		if self.resize.take().is_none() {
 			return;
 		}
-		self.resize = None;
 		self.grid.state = GridState::Settled;
+		self.grid.reassign_ranks();
 	}
 
 	/// A body/tab press focuses the pane so keybinds act on whichever pane you last touched. A press
@@ -543,7 +590,7 @@ impl PackedState {
 
 	/// The grip of the resize in flight.
 	pub fn resizing(&self) -> Option<Grip> {
-		self.resize.map(|r| r.grip)
+		self.resize.as_ref().map(|r| r.grip)
 	}
 
 	// ------- keyboard -------
@@ -722,6 +769,7 @@ impl PackedState {
 					shadow: true,
 					tab_drop: false,
 					tabs: Vec::new(),
+					grips: &[],
 				});
 				continue;
 			}
@@ -743,6 +791,7 @@ impl PackedState {
 				shadow: false,
 				tab_drop,
 				tabs,
+				grips: Grip::on(g.free_left(idx)),
 			});
 		}
 		out
@@ -896,12 +945,14 @@ pub struct Notice {
 pub struct Frame {
 	pub gid: GroupId,
 	/// Index into the (preview) grid's cells — a resize gesture never overlaps a drag, so the
-	/// preview equals the real grid then and this addresses the right cell for [`resize`](PackedState::resize).
+	/// preview equals the real grid then and this addresses the right cell for [`resize_start`](PackedState::resize_start).
 	pub idx: usize,
 	pub style: String,
 	pub shadow: bool,
 	pub tab_drop: bool,
 	pub tabs: Vec<Tab>,
+	/// The grips to render, in paint order (none on a shadow).
+	pub grips: &'static [Grip],
 }
 /// One tab in a [`Frame`]'s header: its panel id (render key + `data-panel`), label, and whether
 /// it's the active tab.
@@ -923,22 +974,32 @@ pub struct Ghost {
 	pub w: f64,
 	pub h: f64,
 }
-/// Where a tile is taken to resize it: the corner sizes both axes, the right edge only the width,
-/// the bottom edge only the height. The edges are thin strips over the content's own; nothing
-/// is taken from it.
+/// Where a tile is taken to resize it. A vertical edge is a line of contact, so `Left`/`Right` move
+/// it with every tile on it ([`PackedGrid::resized`]); `Bottom` sets the height; the corner is
+/// `Right` and `Bottom` at once. The edges are thin strips over the content's own; nothing is taken
+/// from it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Grip {
 	Corner,
+	Left,
 	Right,
 	Bottom,
 }
 impl Grip {
-	/// In paint order: the corner last, over the edges' ends.
-	pub const ALL: [Self; 3] = [Self::Right, Self::Bottom, Self::Corner];
+	/// A tile's grips in paint order, the corner last over the edges' ends. A boundary between two
+	/// tiles is the left one's right grip alone, so a left grip exists only on a free left edge.
+	fn on(free_left: bool) -> &'static [Self] {
+		if free_left {
+			&[Self::Left, Self::Right, Self::Bottom, Self::Corner]
+		} else {
+			&[Self::Right, Self::Bottom, Self::Corner]
+		}
+	}
 
 	pub fn class(self) -> &'static str {
 		match self {
 			Self::Corner => "tl-resize-handle",
+			Self::Left => "tl-resize-left",
 			Self::Right => "tl-resize-right",
 			Self::Bottom => "tl-resize-bottom",
 		}
@@ -947,7 +1008,7 @@ impl Grip {
 	pub fn cursor(self) -> &'static str {
 		match self {
 			Self::Corner => "nwse-resize",
-			Self::Right => "ew-resize",
+			Self::Left | Self::Right => "ew-resize",
 			Self::Bottom => "ns-resize",
 		}
 	}
@@ -1023,16 +1084,14 @@ struct Drag {
 	target: Option<DropTarget>,
 }
 
-/// Resize gesture captured at press: which tile and grip, the pointer start, and the tile's size (in
-/// steps) then.
-#[derive(Clone, Copy)]
+/// A resize in flight: the grabbed tile and grip, the layout and pointer at the press, and the
+/// live pointer. The live grid is always `press` resized by `cursor − press_at`.
 struct ResizeStart {
-	idx: usize,
+	gid: GroupId,
 	grip: Grip,
-	px: f64,
-	py: f64,
-	w: u32,
-	h: u32,
+	press: PackedGrid,
+	press_at: (f64, f64),
+	cursor: (f64, f64),
 }
 
 /// Linear undo history of settled layouts with a cursor into it. `push` appends a fresh edit,

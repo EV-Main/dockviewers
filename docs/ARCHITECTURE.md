@@ -38,8 +38,9 @@ flowchart LR
 `tilers_core`:
 - `model/packed` — the grid itself: `Cell` rects in step units, the skyline `pack`,
   `settle` (gravity toward the top, with the pinned tile claiming its row first),
-  `resolve_target`/`drop`, `refit` for a column-count change. The no-overlap invariant
-  lives here (`assert_packed`) and is guaranteed while `GridState::Settled`.
+  `resolve_target`/`drop`, `refit` for a column-count change, and `resized`, the one resize: a
+  vertical edge moves as a line carrying every tile on it. The no-overlap invariant lives here
+  (`assert_packed`).
 - `model/group` — a tile's tab-group: many panels, one active.
 - `model/serial` — versioned JSON. `PackedGrid` *is* the serialized value; the schema
   tag is the seam for migrations, and `load` errors on a younger payload rather than
@@ -87,19 +88,25 @@ in a microtask after the keydown, so it may `notify` synchronously. Precedence i
 ## Invariants
 
 - `PackedState` is the sole source of truth; every interaction is a `&mut self` mutation.
-- Cells never overlap while the grid reports `Settled`, and nothing is ever left hanging:
-  `settle` pulls every tile up onto the skyline of the tiles above it.
+- Cells never overlap, mid-gesture too, and nothing is ever left hanging: `settle` pulls every tile
+  up onto the skyline of the tiles above it.
+- A resize is a pure function of the layout at the press, the grip and the cursor: the live grid is
+  re-derived from the press layout on every move, and an edit landing mid-gesture lands on that
+  layout. So dragging back restores what the gesture shrank, and the path never matters.
+- A vertical edge is a line of contact. A boundary between two tiles is the left one's right grip
+  alone; a left grip exists only on a free left edge. A horizontal grip never changes a height: a
+  tile's `y` moves only by settling.
 - The content overlay's render order is **independent of layout** — never reorder it, or
   instances remount and stateful panels (maps, scroll, focus) reset.
 - `focused`/`maximized` are overlay state beside the grid, never cells; they are filtered
-  through `live()` so a stale id is inert. `drag`/`resize` hold cell *indices*, so anything
-  that clears cells (`reset`, and hence the band latch) must clear them too.
+  through `live()` so a stale id is inert. `drag`/`resize` address cells, so anything that
+  replaces them (`reset`, and hence the band latch, and `load`) must clear them too.
 - Pixel layout is the browser's job; the model is unit-free steps. Measured boxes are the
   one re-entry of pixels.
 - Content keeps a tile's whole body below the title bar; the edge grips are strips over its edges,
   and its scrollbars stop short of the corner and leave their outer edge to the grip.
-- One gesture at a time: a drag can't start while a resize holds cell indices, nor a resize while a
-  drag does.
+- One gesture at a time: a drag can't start while a resize is in flight, nor a resize while a drag
+  is.
 - A row is a fixed length (`Config::row_h_rem`): the container's height decides only how much of
   the layout shows, never where a tile is or how tall. Only its width reflows.
 - A min belongs to the panel (`DockPanel::min`), not the tile. A cell's floor is derived from its

@@ -67,6 +67,8 @@ A cached payload that is corrupt, from a future schema, or empty counts as a mis
 
 **Publishing a default.** The framework never talks to a server. `leader s p` hands `Config::on_publish` the band and its layout JSON, after the keydown; persist it wherever you like (behind your own authorization) to become the default fresh clients `load` in `on_band`, and say how it went with `api.notify(text)`, the dock's toast. `leader s s` toasts on its own.
 
+**Resizing.** A tile's vertical edges are where it meets its neighbours, so its right grip moves that line: the tile grows into the tiles on its right or they into it, every tile along the line moving with it, until one reaches its min. A left edge with nothing against it has a grip of its own, which carries every tile it meets the same way; a boundary has only the right one. The bottom grip sets the height and pushes the stack below down; the corner is the right grip and the bottom one. A gesture is worked out from the layout at the press, so dragging back restores whatever it shrank.
+
 **Scripting** — `PackedApi` arrives through `on_band`; stash it in a signal to drive the dock from elsewhere. Every method is a read/write of the one state cell:
 
 ```rust
@@ -74,7 +76,7 @@ let gid = api.mint_group_id();
 api.place(Group::new(gid, id), w, h);    // auto-packs left-to-right, top-to-bottom
 api.add_tab(gid, panel_id);
 api.close_active(gid);
-api.resize(idx, new_w, new_h);
+api.resize(idx, new_w, new_h);             // the right grip and the bottom one, at once
 api.reset();                               // wipe the layout back to empty
 let json = api.save(); api.load(&json)?;   // `load` errors on corrupt/future JSON
 api.notify(text);                          // the dock's toast

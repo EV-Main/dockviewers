@@ -71,10 +71,8 @@ pub struct Cell {
 	pub rank: u32,
 }
 
-/// Lifecycle of the grid w.r.t. user gestures. The no-overlap invariant
-/// ([`PackedGrid::assert_packed`]) is guaranteed only while [`Settled`](GridState::Settled);
-/// mid-drag the anchor may momentarily cover a neighbour before the next [`PackedGrid::resize`]
-/// settles it. A fuzz oracle asserts the invariant whenever the grid reports `Settled`.
+/// Whether a resize gesture is in flight: undo capture waits for it to end. The grid stays packed
+/// ([`PackedGrid::assert_packed`]) in both states, since every resize step settles.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum GridState {
 	#[default]
@@ -129,7 +127,7 @@ impl PackedGrid {
 	/// later [`refit`](Self::refit) can preserve it independently of the transient `y`. Called after
 	/// every *structural* edit (place/resize/drop/close): the resulting visual order becomes the
 	/// order a band change will reflow within. `(y, x)` is a total order over non-overlapping cells.
-	fn reassign_ranks(&mut self) {
+	pub(crate) fn reassign_ranks(&mut self) {
 		let mut order: Vec<usize> = (0..self.cells.len()).collect();
 		order.sort_by_key(|&i| (self.cells[i].y, self.cells[i].x));
 		for (rank, &i) in order.iter().enumerate() {
@@ -137,30 +135,35 @@ impl PackedGrid {
 		}
 	}
 
-	/// Resize a tile by its bottom-right grip (top-left pinned). Width is bound to the view
-	/// (`cols`); height grows freely (whitespace below is allowed). The grid then settles under
-	/// `gravity`: the resized tile holds its place while every other tile rises onto the
-	/// skyline above it, so growing pushes the stack below down and shrinking lets it rise.
-	pub fn resize(&mut self, idx: usize, new_w: u32, new_h: u32, cols: u32) {
-		let (x, min_w, min_h) = {
-			let c = &self.cells[idx];
-			(c.x, c.min_w, c.min_h)
-		};
-		// Widest the tile can be from its pinned left edge. The view span caps the result even below
-		// `min_w`: a tile whose min can't fit the current view fills it rather than spilling (the same
-		// rule `place`/`refit` follow).
-		let span = cols.saturating_sub(x).max(1);
-		let c = &mut self.cells[idx];
-		c.w = new_w.max(min_w).min(span);
-		c.h = new_h.max(min_h);
-		// An explicit resize is fresh intent at this view: drop any pre-clamp memory so a later
-		// widening keeps the size the user just chose rather than snapping back to an old want.
-		c.desired_w = None;
-		c.desired_x = None;
-		c.desired_h = None;
-		gravity(&mut self.cells, Some(idx));
-		self.reassign_ranks();
-		debug_assert!(self.overlaps().is_none(), "resize left an overlap");
+	/// The one resize: tile `idx`'s vertical edges moved toward `left`/`right` and its height set to
+	/// `h`, from this (packed) layout. A vertical edge is a line of contact, so moving one moves every
+	/// tile on it (see [`move_line`]); the height grows freely and settling pushes the stack below
+	/// down. A pure function of `(self, args)`, so a gesture replayed from its press layout is
+	/// path-independent. Ranks are left as they were: the caller commits them with
+	/// [`reassign_ranks`](Self::reassign_ranks) once the edit is final.
+	pub fn resized(&self, idx: usize, left: u32, right: u32, h: u32, cols: u32) -> PackedGrid {
+		self.assert_packed();
+		let mut out = self.clone();
+		let c = &self.cells[idx];
+		move_line(&mut out.cells, idx, false, c.x + c.w, right.min(cols));
+		move_line(&mut out.cells, idx, true, c.x, left.min(cols));
+		let g = &mut out.cells[idx];
+		g.h = h.max(g.min_h);
+		// An explicit edit is fresh intent at this view; a tile it didn't touch keeps its pre-clamp memory.
+		for (o, s) in out.cells.iter_mut().zip(&self.cells) {
+			if (o.x, o.w, o.h) != (s.x, s.w, s.h) {
+				(o.desired_w, o.desired_x, o.desired_h) = (None, None, None);
+			}
+		}
+		gravity(&mut out.cells, Some(idx));
+		out.assert_packed();
+		out
+	}
+
+	/// Whether tile `idx`'s left edge has nothing against it: no tile's right edge on it in shared rows.
+	pub fn free_left(&self, idx: usize) -> bool {
+		let c = &self.cells[idx];
+		!self.cells.iter().any(|o| o.x + o.w == c.x && rows_meet(o, c))
 	}
 
 	/// Reflow every tile into a column count and its current floors, then settle by rank. Each tile
@@ -242,11 +245,9 @@ impl PackedGrid {
 		})
 	}
 
-	/// Invariant a settled grid must hold: no two tiles (hence no two contents) overlap, and no
-	/// tile floats above the skyline. The fuzz oracle calls this whenever
-	/// [`state`](PackedGrid::state) is [`GridState::Settled`].
+	/// Invariant the grid always holds: no two tiles (hence no two contents) overlap, and no tile
+	/// floats above the skyline.
 	pub fn assert_packed(&self) {
-		assert_eq!(self.state, GridState::Settled, "assert_packed on a mid-gesture grid");
 		if let Some((i, j)) = self.overlaps() {
 			panic!("overlap: {:?} vs {:?}", self.cells[i], self.cells[j]);
 		}
@@ -458,6 +459,66 @@ fn skyline(cells: &[Cell], x: u32, w: u32) -> u32 {
 	cells.iter().filter(|c| c.x < x + w && x < c.x + c.w).map(|c| c.y + c.h).max().unwrap_or(0)
 }
 
+fn rows_meet(a: &Cell, b: &Cell) -> bool {
+	a.y < b.y + b.h && b.y < a.y + a.h
+}
+
+/// Move the vertical line at column `from` (an edge of `cells[seed]`, which sits right of the line
+/// iff `seed_right`) toward `to`. Every tile on the line moves with it: one whose near edge is on the
+/// line and whose rows meet a member on the other side joins its own side, transitively. Stepping a
+/// column, the side the line leaves claims that column in its rows, and a tile met there joins the
+/// other side; that side shrinks, so the line stops where one of its members reaches its floor
+/// (`min(min_w, w)` at the start). Left members end with their right edge on the line, right
+/// members with their left edge on it; rows never change.
+fn move_line(cells: &mut [Cell], seed: usize, seed_right: bool, from: u32, to: u32) {
+	let n = cells.len();
+	let mut side: Vec<Option<bool>> = vec![None; n]; // `Some(true)`: a member right of the line
+	side[seed] = Some(seed_right);
+	let near = |c: &Cell, right: bool| if right { c.x } else { c.x + c.w };
+	let meets = |side: &[Option<bool>], c: &Cell, s: bool| (0..n).any(|j| side[j] == Some(s) && rows_meet(c, &cells[j]));
+	let close = |side: &mut [Option<bool>], p: u32| {
+		while let Some((i, right)) = (0..n)
+			.filter(|&i| side[i].is_none())
+			.flat_map(|i| [(i, false), (i, true)])
+			.find(|&(i, right)| near(&cells[i], right) == p && meets(side, &cells[i], !right))
+		{
+			side[i] = Some(right);
+		}
+	};
+	let members = |side: &[Option<bool>]| side.iter().filter(|s| s.is_some()).count();
+
+	let mut p = from;
+	while p != to {
+		let right_grows = to < p;
+		let col = if right_grows { p - 1 } else { p };
+		let mut seen = 0;
+		while members(&side) != seen {
+			seen = members(&side);
+			for i in 0..n {
+				let t = &cells[i];
+				if side[i].is_some() || !(t.x <= col && col < t.x + t.w) || !meets(&side, t, right_grows) {
+					continue;
+				}
+				assert_eq!(near(t, !right_grows), p, "a packed layout has nothing straddling the line in a member's rows: {t:?}");
+				side[i] = Some(!right_grows);
+			}
+			close(&mut side, p);
+		}
+		let width = |c: &Cell, right: bool| if right { c.x + c.w - p } else { p - c.x };
+		if (0..n).any(|i| side[i] == Some(!right_grows) && width(&cells[i], !right_grows) <= cells[i].min_w.min(cells[i].w).max(1)) {
+			break;
+		}
+		p = if right_grows { p - 1 } else { p + 1 };
+	}
+	for (c, s) in cells.iter_mut().zip(side) {
+		match s {
+			Some(false) => c.w = p - c.x,
+			Some(true) => (c.x, c.w) = (p, c.x + c.w - p),
+			None => {}
+		}
+	}
+}
+
 /// Settle the grid by pulling every tile upward until it rests on the skyline of the tiles
 /// above it in its columns — gravity toward the top. Processing top-to-bottom, each tile's new
 /// `y` is the max bottom of the already-placed tiles sharing any of its columns (else 0); `x`/
@@ -529,29 +590,33 @@ mod tests {
 	#[test]
 	fn resize_pushes_stack_down() {
 		// a left stack of three, plus a right-column tile sharing the top row.
-		let mut g = PackedGrid {
+		let g = PackedGrid {
 			cells: vec![cell(0, 0, 2, 2), cell(0, 2, 2, 2), cell(0, 4, 2, 2), cell(2, 0, 2, 2)],
 			..Default::default()
 		};
 
-		// Grow the top-left tile down: it now covers the middle one, which must clear it, and
-		// the whole stack below cascades down — no overlap, anchor unmoved.
-		g.resize(0, 2, 4, 6);
-		no_overlap(&g.cells);
-		assert_eq!((g.cells[0].y, g.cells[0].h), (0, 4), "anchor stays, grows");
-		assert_eq!(g.cells[1].y, 4, "middle pushed below the grown top");
-		assert_eq!(g.cells[2].y, 6, "bottom pushed below the middle");
+		// Grow the top-left tile down: the stack below it cascades down, the anchor unmoved.
+		let tall = g.resized(0, 0, 2, 4, 6);
+		assert_eq!((tall.cells[0].y, tall.cells[0].h), (0, 4), "anchor stays, grows");
+		assert_eq!((tall.cells[1].y, tall.cells[2].y), (4, 6), "the stack below is pushed down");
 
-		// Grow it right over the neighbour: the right-column tile is displaced down, not overlapped.
-		g.resize(0, 4, 4, 6);
-		no_overlap(&g.cells);
-		assert_eq!(g.cells[3].y, 4, "right neighbour displaced below the widened tile");
+		// Back to its height from the grown layout: the stack rises onto it again.
+		assert_eq!(tall.resized(0, 0, 2, 2, 6).cells, g.cells, "shrinking lets the stack rise back");
+	}
 
-		// Shrink it back: gravity pulls the displaced stack up to rest on the smaller anchor.
-		g.resize(0, 2, 2, 6);
-		no_overlap(&g.cells);
-		assert_eq!(g.cells[1].y, 2, "middle rises onto the shrunk anchor");
-		assert_eq!((g.cells[3].y, g.cells[2].y), (0, 4), "neighbour rises to top, bottom follows the stack");
+	#[test]
+	fn edge_moves_every_tile_on_its_line() {
+		// Two stacked tiles left of one tall tile; the line at column 2 is all three's edge.
+		let g = PackedGrid {
+			cells: vec![cell(0, 0, 2, 2), cell(0, 2, 2, 2), cell(2, 0, 3, 4)],
+			..Default::default()
+		};
+		let rects = |g: &PackedGrid| g.cells.iter().map(|c| (c.x, c.y, c.w, c.h)).collect::<Vec<_>>();
+
+		assert_eq!(rects(&g.resized(0, 0, 4, 2, 6)), [(0, 0, 4, 2), (0, 2, 4, 2), (4, 0, 1, 4)], "the tall tile gives way to both, down to its floor");
+		assert_eq!(rects(&g.resized(0, 0, 6, 2, 6)), rects(&g.resized(0, 0, 4, 2, 6)), "the line stops at the floor");
+		assert_eq!(rects(&g.resized(2, 1, 5, 4, 6)), [(0, 0, 1, 2), (0, 2, 1, 2), (1, 0, 4, 4)], "the tall tile's left edge is the same line");
+		assert!(!g.resized(0, 0, 4, 2, 6).free_left(2) && g.free_left(0), "a boundary has no left grip; the view's edge does");
 	}
 
 	/// Build a grid whose cells carry distinct group ids, so drops can address them by id.

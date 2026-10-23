@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.3
+
+Resizing a panel by its side moves the line it shares with its neighbours: they give up the space (or
+take it back), every panel along that line moving together, instead of being pushed down. A left edge
+with nothing against it has a grip of its own. Dragging back restores what a resize shrank.
+`leader s s` says it cached the layout in a toast.
+
 ## 0.3.2
 
 A panel keeps its whole body again: the bottom and right grips are thin strips over its edges, and only
