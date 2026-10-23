@@ -184,15 +184,14 @@ pub fn generate(frng: &mut Frng, world: &World, weights: &[u32; N_KINDS]) -> Opt
 			Action::Measure { w, h: frng.span(MIN_H, MAX_H) }
 		}
 		PLACE => {
-			// Sized as a fraction of the grid, so a tile stays a pane rather than a sliver — both counts
-			// scale with the band, and a fixed 1..8 would be a sliver on the 36-row default.
+			// Sized as a fraction of what shows, so a tile stays a pane rather than a sliver.
 			let w = 1 + frng.below(world.state.cols() / 2);
-			let h = 1 + frng.below(world.cfg.rows / 2);
+			let h = 1 + frng.below(world.state.rows() / 2);
 			Action::Place { w, h, min: min(frng, w, h) }
 		}
 		ADD_TAB => Action::AddTab {
 			group: pick_group(frng, world),
-			min: min(frng, world.state.cols(), world.cfg.rows),
+			min: min(frng, world.state.cols(), world.state.rows()),
 		},
 		FOCUS => Action::Focus { group: pick_group(frng, world) },
 		DRAG => {
@@ -286,7 +285,7 @@ pub fn generate(frng: &mut Frng, world: &World, weights: &[u32; N_KINDS]) -> Opt
 				panel: c.group.tabs[frng.below(c.group.tabs.len() as u32) as usize].clone(),
 				// Drawn against the whole band, not the tile — a floor wider than what's left of the row
 				// is the case only a re-floor can reach, and the one that must clamp rather than spill.
-				min: min(frng, world.state.cols(), world.cfg.rows),
+				min: min(frng, world.state.cols(), world.state.rows()),
 			}
 		}
 		_ => unreachable!("kind is one of the constants pushed into `avail`"),

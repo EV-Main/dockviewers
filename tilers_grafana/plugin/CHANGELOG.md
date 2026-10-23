@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.0
+
+A dock row is a Grafana row (30px and its 8px gap), so panels open at their dashboard height and keep it:
+a shorter page or frame shows less, its whitespace going first, then scrolls; it no longer shrinks every
+panel. Layouts cached before keep their rows, which are now taller. A tile's resize corner is opaque over
+its panel.
+
 ## 0.2.2
 
 Textbox variables render. Grafana's kiosk flags (`_dash.hideTimePicker`, `_dash.hideVariables`, `_dash.hideLinks`)

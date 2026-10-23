@@ -19,8 +19,7 @@ use web_sys::HtmlElement;
 
 /// Grafana's dashboard grid: 24 columns, 30px rows, 8px between rows.
 const GRID_COLUMNS: u32 = 24;
-const ROW_PX: f64 = 30.0;
-const ROW_GAP_PX: f64 = 8.0;
+const ROW_PITCH_PX: f64 = 30.0 + 8.0;
 
 /// One panel: its save-model `gridPos`, in Grafana grid units, and the CSS px its content needs
 /// (`0` = nothing beyond the chrome).
@@ -128,6 +127,7 @@ pub fn mount(root: HtmlElement, mut seeds: Vec<Seed>, storage_key: String, on_sl
 	seeds.sort_by_key(|s| (s.y, s.x));
 
 	let config = Config {
+		row_h_rem: ROW_PITCH_PX / root_font_px(), // a dock row is a Grafana row
 		storage_key: Some(storage_key),
 		keymap: Keymap {
 			root: vec![], // Grafana's Ctrl+Z is time-range zoom out
@@ -135,10 +135,8 @@ pub fn mount(root: HtmlElement, mut seeds: Vec<Seed>, storage_key: String, on_sl
 		},
 		..Default::default()
 	};
-	let rows = config.rows;
 	let on_slot = SendWrapper::new(on_slot);
 	let request_tab = SendWrapper::new(request_tab);
-	let root_el = SendWrapper::new(root.clone());
 
 	let owner = Owner::new();
 	let (panels, api, view) = owner.with(|| {
@@ -154,12 +152,10 @@ pub fn mount(root: HtmlElement, mut seeds: Vec<Seed>, storage_key: String, on_sl
 				web_sys::console::warn_1(&format!("tilers_grafana: cached layout hosts panels the dashboard no longer has ({stale:?}); re-seeding").into());
 				a.reset();
 			}
-			let step_h = root_el.client_height() as f64 / rows as f64;
 			let cols = a.cols();
 			for s in &seeds {
 				let w = (s.w as f64 * cols as f64 / GRID_COLUMNS as f64).round() as u32;
-				let h = ((s.h as f64 * ROW_PX + (s.h - 1) as f64 * ROW_GAP_PX) / step_h).round() as u32;
-				a.place(Group::new(a.mint_group_id(), s.id.clone()), w, h);
+				a.place(Group::new(a.mint_group_id(), s.id.clone()), w, s.h);
 			}
 		});
 		let request_tab: Arc<dyn Fn(GroupId) + Send + Sync> = Arc::new(move |gid: GroupId| {
@@ -191,4 +187,17 @@ fn slot(seed: &Seed, on_slot: &SendWrapper<Function>) -> DockPanel {
 			view! { <div class="tl-grafana-slot" data-panel=key node_ref=node></div> }.into_any()
 		}),
 	}
+}
+
+fn root_font_px() -> f64 {
+	let win = web_sys::window().expect("the plugin runs in Grafana's page");
+	let root = win.document().expect("a page has a document").document_element().expect("a document has a root");
+	win.get_computed_style(&root)
+		.expect("our own root is never cross-origin")
+		.expect("a rendered root has a computed style")
+		.get_property_value("font-size")
+		.expect("reading a property never throws")
+		.trim_end_matches("px")
+		.parse()
+		.expect("a computed font-size is in px")
 }

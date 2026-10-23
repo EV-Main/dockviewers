@@ -74,19 +74,27 @@ impl World {
 		Ok(fresh.grid().clone())
 	}
 
-	/// Live px per grid step, the same `(width / cols, height / rows)` [`PackedState::set_measure`]
+	/// Live px per grid step, the same `(width / cols, row_h_rem)` [`PackedState::set_measure`]
 	/// derives — the generator needs it to aim a pointer at a tile.
 	pub fn step_px(&self) -> (f64, f64) {
-		(self.size.0 / self.state.cols() as f64, self.size.1 / self.cfg.rows.max(1) as f64)
+		(self.size.0 / self.state.cols() as f64, self.cfg.row_h_rem * 16.0) // a native root font is 16px
 	}
 
 	/// A container resize, through the real breakpoint path. Returns `Err` if a size seen since the
 	/// last structural edit fails to reproduce its arrangement — i.e. resizing away and back left a
-	/// lasting impact, which is invalid.
+	/// lasting impact, which is invalid — or if a change of height alone moved or resized a tile:
+	/// height only decides how much of the layout shows.
 	pub fn measure(&mut self, w: f64, h: f64) -> Result<(), String> {
+		let frames = |s: &PackedState| s.frames(&HashMap::new()).into_iter().map(|f| f.style).collect::<Vec<_>>();
+		let before = (self.size.0 == w).then(|| frames(&self.state));
 		self.size = (w, h);
 		self.state.set_measure(self.origin, self.size);
 		self.resolve_band()?;
+		if let Some(before) = before
+			&& frames(&self.state) != before
+		{
+			return Err(format!("resizing to {w}x{h}, height alone, moved tiles: {before:?} → {:?}", frames(&self.state)));
+		}
 		match self.measure_log.iter().find(|(s, _)| *s == self.size) {
 			Some((_, prev)) if prev != self.state.grid() => Err(format!(
 				"measure round-trip changed the arrangement at {w}x{h} (cols={}): {:?} vs {:?}",
@@ -136,7 +144,7 @@ impl World {
 	/// `place`/`add_tab` path whenever the framework hands back a reset grid — what a host's
 	/// `on_band` does on a cache miss.
 	fn seed_tiles(&mut self) {
-		let (cols, rows) = (self.state.cols(), self.cfg.rows);
+		let (cols, rows) = (self.state.cols(), self.state.rows());
 		let min = MinSize::Steps { w: Step(1), h: Step(1) };
 		for (fw, fh) in [(0.25, 0.3), (0.3, 0.25), (0.2, 0.4), (0.35, 0.3)] {
 			let gid = self.state.mint_group_id();

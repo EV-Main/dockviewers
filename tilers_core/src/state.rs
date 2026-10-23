@@ -39,7 +39,7 @@ const DRAG_THRESHOLD: f64 = 4.0;
 pub struct PackedState {
 	grid: PackedGrid,
 	cols: u32,
-	/// Live px-per-step on each axis (`width / cols`, `height / rows`); `(0, 0)` until first measure.
+	/// Live px-per-step on each axis (`width / cols`, `Config::row_h_rem`); `(0, 0)` until first measure.
 	step_px: (f64, f64),
 	/// The document's actual root font size, re-read at every measure. Bridges rem ⇄ px for the
 	/// chrome height and a rem-expressed [`MinSize`].
@@ -227,6 +227,12 @@ impl PackedState {
 		self.cols
 	}
 
+	/// Whole rows the container shows: what a tile placed at the top spans to fill its height.
+	pub fn rows(&self) -> u32 {
+		assert!(self.step_px.1 > 0.0, "rows before the first measure: no step size yet");
+		(self.root_size.1 / self.step_px.1) as u32
+	}
+
 	/// The band the layout is stored under — coarser than the [`Breakpoint`] driving `cols`.
 	pub fn band(&self) -> Band {
 		self.breakpoint.band()
@@ -255,9 +261,9 @@ impl PackedState {
 	// ------- effects, folded to methods -------
 
 	/// Store the root's origin (to map pointer→grid space) and its content box, then reflow the
-	/// grid to fill it: classify the width into a responsive band, stretch `cols × rows` across the
-	/// container (a horizontal step is `width / cols`, cols scaled per band; a vertical one
-	/// `height / rows`, rows fixed), and refloor tiles onto the new step.
+	/// grid to fill it: classify the width into a responsive band, stretch `cols` across the
+	/// container's width (a horizontal step is `width / cols`, cols scaled per band; a vertical one is
+	/// [`Config::row_h_rem`]), and refloor tiles onto the new step.
 	pub fn set_measure(&mut self, origin: (f64, f64), size: (f64, f64)) {
 		self.root_origin = origin;
 		self.root_size = size;
@@ -267,12 +273,11 @@ impl PackedState {
 			return;
 		}
 		let steps = self.cfg.steps.max(1);
-		let rows = self.cfg.rows.max(1);
 		let bp = Breakpoint::of(width);
 		let c = bp.scale_cols(steps);
 		self.breakpoint = bp;
 		self.cols = c;
-		self.step_px = (width / c as f64, height / rows as f64);
+		self.step_px = (width / c as f64, self.cfg.row_h_rem * self.rem_px);
 		self.refloor();
 	}
 

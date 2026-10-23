@@ -49,7 +49,7 @@ flowchart LR
   **band latch** (below).
 - `keys` — `Keymap` (leader, scope, root) of `Binding`s, its per-platform resolution into a
   chord trie, and `KeyInput` normalization (layout- and platform-independent key identity).
-- `config` — `Config` (steps/rows/keymap/storage key/save hook),
+- `config` — `Config` (steps/row height/keymap/storage key/save hook),
   `Breakpoint` (5 widths, sets the column count) and `Band` (3 widths, the persistence
   key), `Saved`.
 - `persist` — `localStorage` read/write, wasm-only (a native no-op), crate-internal.
@@ -95,6 +95,8 @@ cache missed. Precedence is therefore: client cache → host default → host bu
   that clears cells (`reset`, and hence the band latch) must clear them too.
 - Pixel layout is the browser's job; the model is unit-free steps. Measured boxes are the
   one re-entry of pixels.
+- A row is a fixed length (`Config::row_h_rem`): the container's height decides only how much of
+  the layout shows, never where a tile is or how tall. Only its width reflows.
 - A min belongs to the panel (`DockPanel::min`), not the tile. A cell's floor is derived from its
   tabs' declared mins at the live step, on every measure and tab change; never stored as layout.
 - A cached layout that is corrupt, from a future schema, or empty is a **miss** that says
