@@ -386,12 +386,12 @@ pub fn PackedArea(panels: Signal<Vec<DockPanel>>, on_band: Option<Callback<Packe
 					div { class: "tl-help",
 						div { class: "tl-help-title", "Keybinds" }
 						if let Some(p) = help.pane {
-							div { class: "tl-help-pane", "{p}" }
+							div { class: "tl-help-pane", {p} }
 						}
-						for (chord, label) in help.rows.iter() {
+						for (chord, label) in help.rows {
 							div { class: "tl-help-row",
-								span { class: "tl-help-label", "{label}" }
-								span { class: "tl-help-key", "{chord}" }
+								span { class: "tl-help-label", {label} }
+								span { class: "tl-help-key", {chord} }
 							}
 						}
 						div { class: "tl-help-foot", "click anywhere to close" }
