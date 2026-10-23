@@ -6,7 +6,6 @@ env:
   RUST_BACKTRACE: short
 jobs:
   code-duplication:
-    if: github.event_name != 'pull_request'
     name: Code Duplication
     needs: pre_ci
     runs-on: ubuntu-latest
@@ -32,7 +31,6 @@ jobs:
   pre_ci:
     uses: valeratrades/.github/.github/workflows/pre_ci.yml@main
   rust-clippy:
-    if: github.event_name != 'pull_request'
     name: Clippy
     needs: pre_ci
     runs-on: ubuntu-latest
@@ -43,8 +41,8 @@ jobs:
       uses: actions/download-artifact@v7
       with:
         name: modified-cargo-files
-    - run: rm -f .cargo/config.toml .cargo/config
-    - run: cargo clippy --tests -- -Dwarnings
+    - run: rm -f "$GITHUB_WORKSPACE/.cargo/config.toml" "$GITHUB_WORKSPACE/.cargo/config"
+    - run: cargo clippy --workspace --all-targets -- -Dwarnings
     timeout-minutes: 45
   rust-doc:
     env:
@@ -61,6 +59,7 @@ jobs:
       with:
         name: modified-cargo-files
     - uses: dtolnay/install@cargo-docs-rs
+    - run: rm -f "$GITHUB_WORKSPACE/.cargo/config.toml" "$GITHUB_WORKSPACE/.cargo/config"
     - run: "for p in $(cargo metadata --no-deps --format-version 1 | jq -r '.packages[]\
         \ | select([.targets[].kind[]] | any(. == \"lib\" or . == \"proc-macro\"))\
         \ | .name'); do\n  cargo docs-rs -p \"$p\"\ndone\n"
@@ -124,7 +123,6 @@ jobs:
         \ is less than 15% of code\"\n\t\t\t\tfi\n        \t\t\t"
 name: Warnings
 'on':
-  pull_request: {}
   push: {}
   workflow_dispatch: {}
 permissions:

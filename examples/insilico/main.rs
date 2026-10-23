@@ -8,6 +8,7 @@
 //! placed in the order ticket ripples through Positions, Balances, Orders, Trades and Console at
 //! once. Tiles pack left-to-right; the top-bar `+` spawns a random window, each tile's `+` opens
 //! the catalog as a new tab, `x` closes the active tab, and the grip resizes in `STEP` increments.
+#![expect(clippy::useless_format, reason = "rsx! expands an attribute's `\"{x}\"` through `format!`")]
 
 mod balances;
 mod chart;

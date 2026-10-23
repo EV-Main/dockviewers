@@ -528,9 +528,11 @@ mod tests {
 
 	#[test]
 	fn resize_pushes_stack_down() {
-		let mut g = PackedGrid::default();
 		// a left stack of three, plus a right-column tile sharing the top row.
-		g.cells = vec![cell(0, 0, 2, 2), cell(0, 2, 2, 2), cell(0, 4, 2, 2), cell(2, 0, 2, 2)];
+		let mut g = PackedGrid {
+			cells: vec![cell(0, 0, 2, 2), cell(0, 2, 2, 2), cell(0, 4, 2, 2), cell(2, 0, 2, 2)],
+			..Default::default()
+		};
 
 		// Grow the top-left tile down: it now covers the middle one, which must clear it, and
 		// the whole stack below cascades down — no overlap, anchor unmoved.
@@ -554,8 +556,7 @@ mod tests {
 
 	/// Build a grid whose cells carry distinct group ids, so drops can address them by id.
 	fn grid_with(cells: Vec<Cell>) -> PackedGrid {
-		let mut g = PackedGrid::default();
-		g.cells = cells;
+		let mut g = PackedGrid { cells, ..Default::default() };
 		for (n, c) in g.cells.iter_mut().enumerate() {
 			c.group.id = GroupId(n as u64);
 		}
@@ -616,8 +617,10 @@ mod tests {
 	#[test]
 	fn refit_clamps_into_narrower_band() {
 		// A layout built on a 12-col band: a right-edge tile reaching col 12.
-		let mut g = PackedGrid::default();
-		g.cells = vec![cell(0, 0, 4, 2), cell(8, 0, 4, 2)];
+		let mut g = PackedGrid {
+			cells: vec![cell(0, 0, 4, 2), cell(8, 0, 4, 2)],
+			..Default::default()
+		};
 
 		g.refit(6);
 		no_overlap(&g.cells);

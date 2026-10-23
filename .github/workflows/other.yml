@@ -3,10 +3,15 @@ jobs:
     env:
       RUSTC_WRAPPER: ''
     name: Asset gate
+    needs: pre_ci
     runs-on: ubuntu-latest
     steps:
     - name: Checkout repository
       uses: actions/checkout@v5
+    - name: Download modified by pre-ci Cargo.toml files
+      uses: actions/download-artifact@v7
+      with:
+        name: modified-cargo-files
     - id: bucket
       name: Interval bucket
       run: echo "key=asset-gate-docs--readme_assets-assets-fuzz-svg-$(( $(date -u
@@ -124,9 +129,10 @@ jobs:
         "$F")" --silent
 
         '
+  pre_ci:
+    uses: valeratrades/.github/.github/workflows/pre_ci.yml@main
 name: Other
 'on':
-  pull_request: {}
   push: {}
   workflow_dispatch: {}
 permissions:

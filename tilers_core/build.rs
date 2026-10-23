@@ -8,8 +8,17 @@ fn main() {
 }
 
 fn git_version() {
-	println!("cargo:rerun-if-changed=.git/HEAD");
-	println!("cargo:rerun-if-changed=.git/refs/");
+	// resolved by git: the package dir need not be the repo root, and in a worktree `.git` is a file
+	if let Some(paths) = std::process::Command::new("git")
+		.args(["rev-parse", "--git-path", "HEAD", "--git-path", "refs"])
+		.output()
+		.ok()
+		.filter(|o| o.status.success())
+	{
+		for path in String::from_utf8_lossy(&paths.stdout).lines() {
+			println!("cargo:rerun-if-changed={path}");
+		}
+	}
 	// Embed git commit hash (fallback to "unknown" if git unavailable, e.g., in Nix sandbox)
 	let git_hash = std::process::Command::new("git")
 		.args(["rev-parse", "--short", "HEAD"])
