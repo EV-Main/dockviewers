@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.2
+
+Textbox variables render. Grafana's kiosk flags (`_dash.hideTimePicker`, `_dash.hideVariables`, `_dash.hideLinks`)
+hide the same controls as on `/d/`, `native` going with the links; a hidden refresh picker still refreshes.
+
 ## 0.2.1
 
 `precompile` compiles canvases whose buttons clip their own label (a placement shorter than Grafana's button):

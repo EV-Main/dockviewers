@@ -22,6 +22,7 @@ import {
   sceneUtils,
   SceneVariable,
   SceneVariableSet,
+  TextBoxVariable,
   VariableValueSelectors,
   VizPanel,
   VizPanelMenu,
@@ -51,7 +52,19 @@ export function toScene(dash: Dashboard & { uid: string }): EmbeddedScene {
   }
   const links = (dash.links ?? []).map((l) => checkLink(l, reject));
   const panels = (dash.panels ?? []).map((p) => toPanel(dash.uid, p, reject));
-  const hideTime = dash.timepicker?.hidden;
+  // Grafana's own kiosk flags, so an embedder hides the same controls here as on `/d/`
+  const url = locationService.getSearchObject();
+  const hideTime = dash.timepicker?.hidden || '_dash.hideTimePicker' in url;
+  const hideVariables = '_dash.hideVariables' in url;
+  const hideLinks = '_dash.hideLinks' in url;
+  const refresh = new SceneRefreshPicker({ refresh: dash.refresh, intervals: dash.timepicker?.refresh_intervals, withText: true });
+  const controls = [
+    ...(hideVariables ? [] : [new VariableValueSelectors({})]),
+    new SceneControlsSpacer(),
+    ...(links.length && !hideLinks ? [new SceneReactObject({ component: DashboardLinks, props: { uid: dash.uid, links } })] : []),
+    ...(hideTime ? [] : [new SceneTimePicker({ quickRanges: dash.timepicker?.quick_ranges }), refresh]),
+    ...(hideLinks ? [] : [new SceneReactObject({ component: NativeLink, props: { uid: dash.uid } })]),
+  ];
 
   return new EmbeddedScene({
     $timeRange: new SceneTimeRange({
@@ -66,19 +79,9 @@ export function toScene(dash: Dashboard & { uid: string }): EmbeddedScene {
     $behaviors: [
       new behaviors.CursorSync({ sync: dash.graphTooltip }),
       new behaviors.LiveNowTimer({ enabled: Boolean(dash.liveNow) }),
+      ...(hideTime ? [refresh] : []), // off screen it still ticks `dash.refresh`
     ],
-    controls: [
-      new VariableValueSelectors({}),
-      new SceneControlsSpacer(),
-      ...(links.length ? [new SceneReactObject({ component: DashboardLinks, props: { uid: dash.uid, links } })] : []),
-      ...(hideTime
-        ? []
-        : [
-            new SceneTimePicker({ quickRanges: dash.timepicker?.quick_ranges }),
-            new SceneRefreshPicker({ refresh: dash.refresh, intervals: dash.timepicker?.refresh_intervals, withText: true }),
-          ]),
-      new SceneReactObject({ component: NativeLink, props: { uid: dash.uid } }),
-    ],
+    controls: controls.length > 1 ? controls : undefined, // a lone spacer would still draw the controls row
     body: new DockLayout({
       children: panels.map((p) => p.panel),
       gridPos: Object.fromEntries(panels.map((p) => [p.panel.state.key!, p.gridPos])),
@@ -269,6 +272,8 @@ function toVariable(v: VariableModel & { definition?: string }, reject: Reject):
         definition: v.definition,
         allowCustomValue: v.allowCustomValue,
       });
+    case 'textbox':
+      return new TextBoxVariable({ ...common, value: (Array.isArray(common.value) ? common.value[0] : common.value) || (v.query as string) });
     case 'custom':
       return new CustomVariable({ ...common, ...all, query: v.query as string, isMulti: v.multi, allowCustomValue: v.allowCustomValue });
     case 'datasource':
