@@ -95,8 +95,8 @@ cache missed. Precedence is therefore: client cache → host default → host bu
   that clears cells (`reset`, and hence the band latch) must clear them too.
 - Pixel layout is the browser's job; the model is unit-free steps. Measured boxes are the
   one re-entry of pixels.
-- Content never lies under chrome: the title bar above it, the footer below and the rail on its
-  right, where the grips are — so no content (a scrollbar) sits under a grip.
+- Content keeps a tile's whole body below the title bar; the edge grips are strips over its edges,
+  and its scrollbars stop short of the corner and leave their outer edge to the grip.
 - One gesture at a time: a drag can't start while a resize holds cell indices, nor a resize while a
   drag does.
 - A row is a fixed length (`Config::row_h_rem`): the container's height decides only how much of

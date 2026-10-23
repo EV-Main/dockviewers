@@ -32,8 +32,6 @@ pub fn check_settled(world: &World) -> Result<(), String> {
 	let (sw, sh) = world.step_px();
 	let title_h = state.title_h();
 	let rem_px = title_h / world.cfg.title_h_rem;
-	// What a tile spends around its content: the right rail, and the title bar with the footer.
-	let (chrome_w, chrome_h) = (title_h / 8.0, title_h * 1.5);
 	if grid.state != GridState::Settled {
 		return Err(format!("grid not settled: {:?}", grid.state));
 	}
@@ -51,8 +49,8 @@ pub fn check_settled(world: &World) -> Result<(), String> {
 		let (need_w, need_h) = c.group.tabs.iter().fold((0.0_f64, 0.0_f64), |(w, h), p| {
 			let (pw, ph) = match world.mins[p] {
 				MinSize::Steps { w, h } => (w.0 as f64 * sw, h.0 as f64 * sh),
-				MinSize::Rem { w, h } => (w * rem_px + chrome_w, h * rem_px + chrome_h),
-				MinSize::Px { w, h } => (w + chrome_w, h + chrome_h),
+				MinSize::Rem { w, h } => (w * rem_px, h * rem_px + title_h),
+				MinSize::Px { w, h } => (w, h + title_h),
 			};
 			(w.max(pw), h.max(ph))
 		});

@@ -56,8 +56,6 @@ Runnable demo: `dx serve --example insilico --package tilers_dioxus --platform w
 
 **Props:** `panels` (order = stable overlay render order — don't reorder it, that remounts panels), `on_band` (see below), `config`.
 
-**Resizing** takes a tile by its corner (both axes), its footer (height) or the rail on its right (width); content ends before all three, so its scrollbar never sits under a grip.
-
 **Mins** belong to the panel: `MinSize::Px`/`Rem` size its content box, `Steps` the whole tile. Every tile is floored to the max over its tabs, re-resolved on every measure, so a px need holds however short the window gets; a want the floor overrode comes back once the floor drops. Edit a panel's `min` in `panels` to re-floor it.
 
 **Bands and the seed cache.** A container width classifies into one of three `Band`s — `sm`/`md`/`xl` — each keeping its own arrangement, because a phone doesn't want a desktop's tiling. Set `Config::storage_key` and the framework caches the layout in `localStorage` under `<key>-<band>` on `leader s s`, restoring it before your code runs. `on_band` fires once per band entry — at mount, and again on every crossing — *after* that resolution:

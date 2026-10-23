@@ -28,13 +28,23 @@ pub const CSS: &str = r#"
 /* Pinned to half the title bar, so the grab corner keeps its proportion at any chrome height. */
 .tl-resize-handle { position: absolute; right: 0; bottom: 0;
 	width: calc(var(--tl-title-h, 2rem) / 2); height: calc(var(--tl-title-h, 2rem) / 2);
-	cursor: nwse-resize; z-index: 101; background: var(--tl-resize-bg, #555); }
-/* The edge grips: the footer (the corner's height) and a rail on the right, both chrome the content
-   ends before. Bare until hovered. */
+	cursor: nwse-resize; z-index: 101;
+	/* opaque where a scrollbar still runs under it (no track margins outside Chromium/WebKit) */
+	background: linear-gradient(var(--tl-resize-bg, #555), var(--tl-resize-bg, #555)), var(--tl-group-bg, #1e1e1e); }
+/* The edge grips: thin strips over the content's own edges, bare until hovered. */
 .tl-resize-bottom, .tl-resize-right { position: absolute; z-index: 100; }
-.tl-resize-bottom { left: 0; right: 0; bottom: 0; height: calc(var(--tl-title-h, 2rem) / 2); cursor: ns-resize; }
+.tl-resize-bottom { left: 0; right: 0; bottom: 0; height: calc(var(--tl-title-h, 2rem) / 8); cursor: ns-resize; }
 .tl-resize-right { right: 0; top: var(--tl-title-h, 2rem); bottom: 0; width: calc(var(--tl-title-h, 2rem) / 8); cursor: ew-resize; }
 .tl-resize-bottom:hover, .tl-resize-right:hover { background: var(--tl-resize-bg, #555); }
+/* Content keeps the whole body; only its scrollbars give way: they stop short of the corner, and their
+   outer edge (under the edge grip) is left bare, so the thumb is never under a grip. */
+.tl-render-overlay ::-webkit-scrollbar { width: calc(var(--tl-title-h, 2rem) / 8 + 8px); height: calc(var(--tl-title-h, 2rem) / 8 + 8px); }
+.tl-render-overlay ::-webkit-scrollbar-thumb { background: var(--tl-resize-bg, #555); background-clip: padding-box; border-radius: 6px; }
+.tl-render-overlay ::-webkit-scrollbar-thumb:vertical { border-right: calc(var(--tl-title-h, 2rem) / 8) solid transparent; }
+.tl-render-overlay ::-webkit-scrollbar-thumb:horizontal { border-bottom: calc(var(--tl-title-h, 2rem) / 8) solid transparent; }
+.tl-render-overlay ::-webkit-scrollbar-track:vertical { margin-bottom: calc(var(--tl-title-h, 2rem) / 2); }
+.tl-render-overlay ::-webkit-scrollbar-track:horizontal { margin-right: calc(var(--tl-title-h, 2rem) / 2); }
+.tl-render-overlay ::-webkit-scrollbar-corner { background: transparent; }
 .tl-resize-handle::after { content: "⌟"; position: absolute; right: 0.08em; bottom: -0.23em;
 	font-size: calc(var(--tl-title-h, 2rem) / 2); line-height: 1; color: var(--tl-fg, #ddd); }
 /* Horizontal is fully model-bounded (every tile satisfies x + w ≤ cols), so a horizontal

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.2
+
+A panel keeps its whole body again: the bottom and right grips are thin strips over its edges, and only
+its scrollbars give way, stopping short of the corner.
+
 ## 0.3.1
 
 Panels resize by their bottom edge and their right edge as well as the corner; a panel ends above its

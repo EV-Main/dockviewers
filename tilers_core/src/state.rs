@@ -183,7 +183,7 @@ impl PackedState {
 				self.mins
 					.get(p)
 					.unwrap_or_else(|| panic!("hosted panel {p:?} has no declared min: the binding's panels list every panel the layout hosts"))
-					.resolve(sw, sh, self.rem_px, (self.rail_w(), self.title_h() + self.footer_h()))
+					.resolve(sw, sh, self.rem_px, self.title_h())
 			})
 			.fold((0, 0), |(w, h), (pw, ph)| (w.max(pw), h.max(ph)))
 	}
@@ -243,16 +243,6 @@ impl PackedState {
 	/// the `--tl-title-h` the binding emits, so they agree by construction.
 	pub fn title_h(&self) -> f64 {
 		self.cfg.title_h_rem * self.rem_px
-	}
-
-	/// The footer: the bottom grip's band, the corner's height. Content ends above it.
-	fn footer_h(&self) -> f64 {
-		self.title_h() / 2.0
-	}
-
-	/// The right grip's rail. Content ends left of it.
-	fn rail_w(&self) -> f64 {
-		self.title_h() / 8.0
 	}
 
 	/// Read access to the live grid — for a host rebuilding its panel list from a restored layout.
@@ -784,7 +774,7 @@ impl PackedState {
 				let style = if hidden.contains(id) {
 					"display:none;".to_string()
 				} else {
-					slot_style(maximized, cell.group.id, cell.x, cell.y, cell.w, cell.h, id == &active, sw, sh, (self.title_h(), self.rail_w(), self.footer_h()))
+					slot_style(maximized, cell.group.id, cell.x, cell.y, cell.w, cell.h, id == &active, sw, sh, self.title_h())
 				};
 				map.insert(id.clone(), ContentSlot { style, group: cell.group.id });
 			}
@@ -906,8 +896,9 @@ pub struct Ghost {
 	pub w: f64,
 	pub h: f64,
 }
-/// Where a tile is taken to resize it: the corner sizes both axes, the right rail only the width,
-/// the footer only the height. Each sits in chrome, never over content.
+/// Where a tile is taken to resize it: the corner sizes both axes, the right edge only the width,
+/// the bottom edge only the height. The edges are thin strips over the content's own; nothing
+/// is taken from it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Grip {
 	Corner,
@@ -915,7 +906,7 @@ pub enum Grip {
 	Bottom,
 }
 impl Grip {
-	/// In paint order: the corner last, over the footer's end.
+	/// In paint order: the corner last, over the edges' ends.
 	pub const ALL: [Self; 3] = [Self::Right, Self::Bottom, Self::Corner];
 
 	pub fn class(self) -> &'static str {
@@ -945,15 +936,14 @@ fn report(msg: &str) {
 }
 
 /// Inline style placing a panel's content over its tile's body from the grid rect — the same math
-/// the skeleton uses, so the two cannot drift apart. The body is the tile less its chrome: the title
-/// bar above, the right rail and the footer, where the grips are. Inactive tabs stay mounted but
-/// `display:none`; a maximized group's active panel fills the container's body, all others hidden.
-fn slot_style(maximized: Option<GroupId>, group: GroupId, x: u32, y: u32, w: u32, h: u32, active: bool, step_w: f64, step_h: f64, (chrome_h, rail_w, footer_h): (f64, f64, f64)) -> String {
+/// the skeleton uses, so the two cannot drift apart. Inactive tabs stay mounted but `display:none`;
+/// a maximized group's active panel fills the container below the chrome, all others hidden.
+fn slot_style(maximized: Option<GroupId>, group: GroupId, x: u32, y: u32, w: u32, h: u32, active: bool, step_w: f64, step_h: f64, chrome_h: f64) -> String {
 	if let Some(mg) = maximized {
 		if group != mg || !active {
 			return "display:none;".into();
 		}
-		return format!("display:block; left:0; top:{chrome_h}px; width:calc(100% - {rail_w}px); height:calc(100% - {chrome_h}px - {footer_h}px);");
+		return format!("display:block; left:0; top:{chrome_h}px; width:100%; height:calc(100% - {chrome_h}px);");
 	}
 	if !active {
 		return "display:none;".into();
@@ -962,7 +952,7 @@ fn slot_style(maximized: Option<GroupId>, group: GroupId, x: u32, y: u32, w: u32
 	// top/height bridge the two with `calc`.
 	let (left, top) = (x as f64 * step_w, y as f64 * step_h);
 	let (width, height) = (w as f64 * step_w, h as f64 * step_h);
-	format!("display:block; left:{left}px; top:calc({top}px + {chrome_h}px); width:calc({width}px - {rail_w}px); height:calc({height}px - {chrome_h}px - {footer_h}px);")
+	format!("display:block; left:{left}px; top:calc({top}px + {chrome_h}px); width:{width}px; height:calc({height}px - {chrome_h}px);")
 }
 
 /// The document's root font size in px. Only ever reached from a live measure of a mounted element,
