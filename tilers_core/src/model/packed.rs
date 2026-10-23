@@ -136,17 +136,16 @@ impl PackedGrid {
 	}
 
 	/// The one resize: tile `idx`'s vertical edges moved toward `left`/`right` and its height set to
-	/// `h`, from this (packed) layout. A vertical edge is a line of contact, so moving one moves every
-	/// tile on it (see [`move_line`]); the height grows freely and settling pushes the stack below
-	/// down. A pure function of `(self, args)`, so a gesture replayed from its press layout is
+	/// `h`, from this (packed) layout. An edge growing into a neighbour pushes it (see [`move_edge`]);
+	/// the height grows freely and settling pushes the stack below down. A pure function of `(self, args)`, so a gesture replayed from its press layout is
 	/// path-independent. Ranks are left as they were: the caller commits them with
 	/// [`reassign_ranks`](Self::reassign_ranks) once the edit is final.
 	pub fn resized(&self, idx: usize, left: u32, right: u32, h: u32, cols: u32) -> PackedGrid {
 		self.assert_packed();
 		let mut out = self.clone();
 		let c = &self.cells[idx];
-		move_line(&mut out.cells, idx, false, c.x + c.w, right.min(cols));
-		move_line(&mut out.cells, idx, true, c.x, left.min(cols));
+		move_edge(&mut out.cells, idx, false, c.x + c.w, right.min(cols));
+		move_edge(&mut out.cells, idx, true, c.x, left.min(cols));
 		let g = &mut out.cells[idx];
 		g.h = h.max(g.min_h);
 		// An explicit edit is fresh intent at this view; a tile it didn't touch keeps its pre-clamp memory.
@@ -160,10 +159,11 @@ impl PackedGrid {
 		out
 	}
 
-	/// Whether tile `idx`'s left edge has nothing against it: no tile's right edge on it in shared rows.
+	/// Whether tile `idx`'s left edge has room to its left: off the view's edge, and no tile's right
+	/// edge on it in shared rows.
 	pub fn free_left(&self, idx: usize) -> bool {
 		let c = &self.cells[idx];
-		!self.cells.iter().any(|o| o.x + o.w == c.x && rows_meet(o, c))
+		c.x > 0 && !self.cells.iter().any(|o| o.x + o.w == c.x && rows_meet(o, c))
 	}
 
 	/// Reflow every tile into a column count and its current floors, then settle by rank. Each tile
@@ -463,58 +463,42 @@ fn rows_meet(a: &Cell, b: &Cell) -> bool {
 	a.y < b.y + b.h && b.y < a.y + a.h
 }
 
-/// Move the vertical line at column `from` (an edge of `cells[seed]`, which sits right of the line
-/// iff `seed_right`) toward `to`. Every tile on the line moves with it: one whose near edge is on the
-/// line and whose rows meet a member on the other side joins its own side, transitively. Stepping a
-/// column, the side the line leaves claims that column in its rows, and a tile met there joins the
-/// other side; that side shrinks, so the line stops where one of its members reaches its floor
-/// (`min(min_w, w)` at the start). Left members end with their right edge on the line, right
-/// members with their left edge on it; rows never change.
-fn move_line(cells: &mut [Cell], seed: usize, seed_right: bool, from: u32, to: u32) {
+/// Move `cells[seed]`'s right edge (its left one if `left`) from column `from` toward `to`. Only that
+/// tile is taken: growing, it pushes along in front of it the near edge of every tile it reaches in
+/// its rows, shrinking them; shrinking, it leaves its neighbours where they are. The edge stops where
+/// the tile giving way (a pushed one, or the grabbed one itself) reaches its floor (`min(min_w, w)` at
+/// the start). Rows never change.
+fn move_edge(cells: &mut [Cell], seed: usize, left: bool, from: u32, to: u32) {
 	let n = cells.len();
-	let mut side: Vec<Option<bool>> = vec![None; n]; // `Some(true)`: a member right of the line
-	side[seed] = Some(seed_right);
-	let near = |c: &Cell, right: bool| if right { c.x } else { c.x + c.w };
-	let meets = |side: &[Option<bool>], c: &Cell, s: bool| (0..n).any(|j| side[j] == Some(s) && rows_meet(c, &cells[j]));
-	let close = |side: &mut [Option<bool>], p: u32| {
-		while let Some((i, right)) = (0..n)
-			.filter(|&i| side[i].is_none())
-			.flat_map(|i| [(i, false), (i, true)])
-			.find(|&(i, right)| near(&cells[i], right) == p && meets(side, &cells[i], !right))
-		{
-			side[i] = Some(right);
-		}
-	};
-	let members = |side: &[Option<bool>]| side.iter().filter(|s| s.is_some()).count();
-
+	let mut pushed = vec![false; n];
+	// The column count a tile keeps with the edge at `p`: `ahead` is the side the edge faces.
+	let width = |c: &Cell, ahead: bool, p: u32| if ahead == left { p - c.x } else { c.x + c.w - p };
+	let floor = |c: &Cell| c.min_w.min(c.w).max(1);
 	let mut p = from;
 	while p != to {
-		let right_grows = to < p;
-		let col = if right_grows { p - 1 } else { p };
-		let mut seen = 0;
-		while members(&side) != seen {
-			seen = members(&side);
-			for i in 0..n {
-				let t = &cells[i];
-				if side[i].is_some() || !(t.x <= col && col < t.x + t.w) || !meets(&side, t, right_grows) {
-					continue;
+		if (to < p) == left {
+			let col = if left { p - 1 } else { p };
+			for (i, t) in cells.iter().enumerate() {
+				if i != seed && !pushed[i] && t.x <= col && col < t.x + t.w && rows_meet(t, &cells[seed]) {
+					assert_eq!(if left { t.x + t.w } else { t.x }, p, "a packed layout has nothing straddling the edge in its rows: {t:?}");
+					pushed[i] = true;
 				}
-				assert_eq!(near(t, !right_grows), p, "a packed layout has nothing straddling the line in a member's rows: {t:?}");
-				side[i] = Some(!right_grows);
 			}
-			close(&mut side, p);
-		}
-		let width = |c: &Cell, right: bool| if right { c.x + c.w - p } else { p - c.x };
-		if (0..n).any(|i| side[i] == Some(!right_grows) && width(&cells[i], !right_grows) <= cells[i].min_w.min(cells[i].w).max(1)) {
+			if (0..n).any(|i| pushed[i] && width(&cells[i], true, p) <= floor(&cells[i])) {
+				break;
+			}
+		} else if width(&cells[seed], false, p) <= floor(&cells[seed]) {
 			break;
 		}
-		p = if right_grows { p - 1 } else { p + 1 };
+		p = if to < p { p - 1 } else { p + 1 };
 	}
-	for (c, s) in cells.iter_mut().zip(side) {
-		match s {
-			Some(false) => c.w = p - c.x,
-			Some(true) => (c.x, c.w) = (p, c.x + c.w - p),
-			None => {}
+	for (i, c) in cells.iter_mut().enumerate() {
+		match (i == seed, pushed[i]) {
+			(true, _) if left => (c.x, c.w) = (p, c.x + c.w - p),
+			(true, _) => c.w = p - c.x,
+			(false, true) if left => c.w = p - c.x,
+			(false, true) => (c.x, c.w) = (p, c.x + c.w - p),
+			(false, false) => {}
 		}
 	}
 }
@@ -605,18 +589,24 @@ mod tests {
 	}
 
 	#[test]
-	fn edge_moves_every_tile_on_its_line() {
-		// Two stacked tiles left of one tall tile; the line at column 2 is all three's edge.
+	fn an_edge_takes_only_its_tile_and_pushes_what_it_reaches() {
+		// Two stacked tiles left of one tall tile: column 2 is a boundary for all three.
 		let g = PackedGrid {
 			cells: vec![cell(0, 0, 2, 2), cell(0, 2, 2, 2), cell(2, 0, 3, 4)],
 			..Default::default()
 		};
 		let rects = |g: &PackedGrid| g.cells.iter().map(|c| (c.x, c.y, c.w, c.h)).collect::<Vec<_>>();
 
-		assert_eq!(rects(&g.resized(0, 0, 4, 2, 6)), [(0, 0, 4, 2), (0, 2, 4, 2), (4, 0, 1, 4)], "the tall tile gives way to both, down to its floor");
-		assert_eq!(rects(&g.resized(0, 0, 6, 2, 6)), rects(&g.resized(0, 0, 4, 2, 6)), "the line stops at the floor");
-		assert_eq!(rects(&g.resized(2, 1, 5, 4, 6)), [(0, 0, 1, 2), (0, 2, 1, 2), (1, 0, 4, 4)], "the tall tile's left edge is the same line");
-		assert!(!g.resized(0, 0, 4, 2, 6).free_left(2) && g.free_left(0), "a boundary has no left grip; the view's edge does");
+		assert_eq!(rects(&g.resized(0, 0, 1, 2, 6)), [(0, 0, 1, 2), (0, 2, 2, 2), (2, 0, 3, 4)], "shrinking leaves the neighbours where they are");
+		assert_eq!(rects(&g.resized(0, 0, 4, 2, 6)), [(0, 0, 4, 2), (0, 2, 2, 2), (4, 0, 1, 4)], "growing pushes the tall tile, down to its floor");
+		assert_eq!(rects(&g.resized(0, 0, 6, 2, 6)), rects(&g.resized(0, 0, 4, 2, 6)), "the edge stops at the floor");
+		assert!(!g.free_left(2) && !g.free_left(0), "a boundary has no left grip, nor does the view's edge");
+		let gap = PackedGrid {
+			cells: vec![cell(0, 0, 1, 2), cell(3, 0, 2, 2)],
+			..Default::default()
+		};
+		assert!(gap.free_left(1), "room on the left is a left grip");
+		assert_eq!(rects(&gap.resized(1, 0, 5, 2, 6)), [(0, 0, 1, 2), (1, 0, 4, 2)], "it crosses the gap, then stops at a floor it reaches");
 	}
 
 	/// Build a grid whose cells carry distinct group ids, so drops can address them by id.

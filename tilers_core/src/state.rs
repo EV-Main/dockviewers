@@ -977,9 +977,9 @@ pub struct Ghost {
 	pub w: f64,
 	pub h: f64,
 }
-/// Where a tile is taken to resize it. A vertical edge is a line of contact, so `Left`/`Right` move
-/// it with every tile on it ([`PackedGrid::resized`]); `Bottom` sets the height; the corner is
-/// `Right` and `Bottom` at once. The edges are thin strips over the content's own; nothing is taken
+/// Where a tile is taken to resize it. `Left`/`Right` move that edge of its tile alone, pushing the
+/// tiles it grows into ([`PackedGrid::resized`]); `Bottom` sets the height; the corner is `Right`
+/// and `Bottom` at once. The edges are thin strips over the content's own; nothing is taken
 /// from it.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Grip {

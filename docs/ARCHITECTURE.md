@@ -38,8 +38,8 @@ flowchart LR
 `tilers_core`:
 - `model/packed` — the grid itself: `Cell` rects in step units, the skyline `pack`,
   `settle` (gravity toward the top, with the pinned tile claiming its row first),
-  `resolve_target`/`drop`, `refit` for a column-count change, and `resized`, the one resize: a
-  vertical edge moves as a line carrying every tile on it. The no-overlap invariant lives here
+  `resolve_target`/`drop`, `refit` for a column-count change, and `resized`, the one resize: an
+  edge moves its own tile, pushing what it grows into. The no-overlap invariant lives here
   (`assert_packed`).
 - `model/group` — a tile's tab-group: many panels, one active.
 - `model/serial` — versioned JSON. `PackedGrid` *is* the serialized value; the schema
@@ -93,9 +93,11 @@ in a microtask after the keydown, so it may `notify` synchronously. Precedence i
 - A resize is a pure function of the layout at the press, the grip and the cursor: the live grid is
   re-derived from the press layout on every move, and an edit landing mid-gesture lands on that
   layout. So dragging back restores what the gesture shrank, and the path never matters.
-- A vertical edge is a line of contact. A boundary between two tiles is the left one's right grip
-  alone; a left grip exists only on a free left edge. A horizontal grip never changes a height: a
-  tile's `y` moves only by settling.
+- A grip takes its own tile only. A boundary between two tiles is the left one's right grip alone,
+  and moving it away leaves the right one where it is; growing pushes the tiles it reaches. A left
+  grip exists only where a left edge has room beside it, never at the view's edge: a nested dock's
+  edge sits on its host's boundaries. A horizontal grip never changes a height: a tile's `y` moves
+  only by settling.
 - The content overlay's render order is **independent of layout** — never reorder it, or
   instances remount and stateful panels (maps, scroll, focus) reset.
 - `focused`/`maximized` are overlay state beside the grid, never cells; they are filtered

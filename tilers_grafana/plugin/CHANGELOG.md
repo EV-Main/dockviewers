@@ -2,9 +2,9 @@
 
 ## 0.3.3
 
-Resizing a panel by its side moves the line it shares with its neighbours: they give up the space (or
-take it back), every panel along that line moving together, instead of being pushed down. A left edge
-with nothing against it has a grip of its own. Dragging back restores what a resize shrank.
+Resizing a panel by its side pushes the panels it grows into, which give up the space, instead of
+shoving them down; shrinking it leaves its neighbours where they are. A left edge with room beside it
+has a grip of its own. Dragging back restores what a resize shrank.
 `leader s s` says it cached the layout in a toast.
 The leader is `Alt+z` (was `Alt+t`), and binds match the key your layout sends, never its physical
 position.

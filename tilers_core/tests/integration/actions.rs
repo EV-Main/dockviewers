@@ -130,19 +130,15 @@ pub fn apply(action: &Action, world: &mut World, mid: &mut dyn FnMut(&World)) ->
 			world.structural_edit();
 			world.state.resize_start(*idx, *grip, start.0, start.1);
 			let press = world.state.grid().cells.clone();
-			// The grabbed edge, and every tile across it at press: each must stay on it as it moves.
+			// Only the grabbed edge moves; another tile moves only by being pushed along in front of it.
 			let edge = |c: &Cell| match grip {
 				Grip::Left => Some(c.x),
 				Grip::Right | Grip::Corner => Some(c.x + c.w),
 				Grip::Bottom => None,
 			};
+			let near = |c: &Cell| if *grip == Grip::Left { c.x + c.w } else { c.x };
+			let ahead = |a: u32, b: u32| if *grip == Grip::Left { a <= b } else { a >= b };
 			let g = &press[*idx];
-			let across: Vec<(usize, bool)> = edge(g).map_or_else(Vec::new, |e| {
-				(0..press.len())
-					.filter(|&j| j != *idx && press[j].y < g.y + g.h && g.y < press[j].y + press[j].h)
-					.filter_map(|j| (press[j].x == e).then_some((j, true)).or((press[j].x + press[j].w == e).then_some((j, false))))
-					.collect()
-			});
 			for p in path {
 				world.cursor = *p;
 				world.state.resize_move(*p);
@@ -156,10 +152,12 @@ pub fn apply(action: &Action, world: &mut World, mid: &mut dyn FnMut(&World)) ->
 						return Err(format!("the Bottom grip changed tile {j}'s columns: {a:?} → {b:?}"));
 					}
 				}
-				let e = edge(&now[*idx]);
-				for &(j, right) in &across {
-					if Some(if right { now[j].x } else { now[j].x + now[j].w }) != e {
-						return Err(format!("tile {j} was across the {grip:?} edge at press but left it: {:?} vs grabbed {:?}", now[j], now[*idx]));
+				if let (Some(e0), Some(e)) = (edge(g), edge(&now[*idx])) {
+					for (j, (a, b)) in press.iter().zip(now).enumerate() {
+						let pushed = a.y < g.y + g.h && g.y < a.y + a.h && ahead(near(a), e0) && !ahead(near(a), e) && near(b) == e;
+						if j != *idx && (a.x, a.w) != (b.x, b.w) && !pushed {
+							return Err(format!("the {grip:?} grip moved tile {j}, which its edge never reached: {a:?} → {b:?} (grabbed {:?})", now[*idx]));
+						}
 					}
 				}
 				mid(world);
