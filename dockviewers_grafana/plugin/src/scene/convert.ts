@@ -29,7 +29,7 @@ import {
 import { isWeekStart } from '@grafana/ui';
 
 import { DashboardLinks, NativeLink } from './controls';
-import { DockLayout } from './DockLayout';
+import { DockLayout, DockSpec } from './DockLayout';
 import { PanelTimeRange } from './PanelTimeRange';
 
 type Reject = (where: string, feature: string) => never;
@@ -82,6 +82,7 @@ export function toScene(dash: Dashboard & { uid: string }): EmbeddedScene {
     body: new DockLayout({
       children: panels.map((p) => p.panel),
       gridPos: Object.fromEntries(panels.map((p) => [p.panel.state.key!, p.gridPos])),
+      dock: Object.fromEntries(panels.map((p) => [p.panel.state.key!, p.dock])),
       storageKey: `dv-grafana-${dash.uid}`,
       titles: new Map(),
     }),
@@ -99,7 +100,7 @@ function checkLink(link: DashboardLink, reject: Reject): DashboardLink {
   return link;
 }
 
-function toPanel(uid: string, p: Panel | RowPanel, reject: Reject): { panel: VizPanel; gridPos: GridPos } {
+function toPanel(uid: string, p: Panel | RowPanel, reject: Reject): { panel: VizPanel; gridPos: GridPos; dock: DockSpec } {
   const where = `panel ${p.id} "${p.title}"`;
   if (p.type === 'row') {
     reject(where, 'a row');
@@ -127,6 +128,7 @@ function toPanel(uid: string, p: Panel | RowPanel, reject: Reject): { panel: Viz
 
   return {
     gridPos: panel.gridPos,
+    dock: toDock(uid, key, where, panel),
     panel: new VizPanel({
       key,
       title: panel.title,
@@ -146,6 +148,52 @@ function toPanel(uid: string, p: Panel | RowPanel, reject: Reject): { panel: Viz
       menu: new VizPanelMenu({ $behaviors: [(menu: VizPanelMenu) => menu.setItems(menuItems(uid, menu.parent as VizPanel))] }),
     }),
   };
+}
+
+/**
+ * The panel's `dock` key, outside Grafana's schema: `minW`/`minH` are the CSS px its content needs, or
+ * `precompile` asks the plugin to measure them once and cache the result.
+ */
+function toDock(uid: string, key: string, where: string, panel: Panel & { dock?: unknown }): DockSpec {
+  const dock = panel.dock ?? {};
+  const bad = (what: string): never => {
+    throw new Error(`Dashboard "${uid}": ${where} has ${what} in its dock key.`);
+  };
+  if (typeof dock !== 'object' || dock === null || Array.isArray(dock)) {
+    return bad(`a non-object (${JSON.stringify(dock)})`);
+  }
+  const { minW, minH, precompile, ...rest } = dock as Record<string, unknown>;
+  if (Object.keys(rest).length) {
+    bad(`unknown fields ${Object.keys(rest).join(', ')}`);
+  }
+  const px = (name: string, v: unknown) => {
+    if (v === undefined) {
+      return 0;
+    }
+    if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) {
+      return bad(`${name}=${JSON.stringify(v)}, not a positive px count`);
+    }
+    return v;
+  };
+  if (precompile === undefined) {
+    return { minW: px('minW', minW), minH: px('minH', minH) };
+  }
+  if (precompile !== true) {
+    bad(`precompile=${JSON.stringify(precompile)}, not true`);
+  }
+  if (minW !== undefined || minH !== undefined) {
+    bad('both precompile and an authored min');
+  }
+  const { gridPos, ...model } = panel;
+  return { precompile: { store: `dv-grafana-min-${uid}-${key}`, model: fnv1a(JSON.stringify(model)) } };
+}
+
+function fnv1a(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+  }
+  return (h >>> 0).toString(16);
 }
 
 function toData(panel: Panel) {

@@ -64,6 +64,7 @@
  "panels": [
   {
    "id": 2,
+   "dock": { "precompile": true },
    "type": "canvas",
    "title": "Switch \u00b7 $deployment",
    "gridPos": {
@@ -157,6 +158,7 @@
   },
   {
    "id": 9,
+   "dock": { "minH": 82 },
    "type": "table",
    "title": "Flux \u00b7 $deployment",
    "gridPos": {
@@ -184,6 +186,7 @@
   },
   {
    "id": 10,
+   "dock": { "minH": 93 },
    "type": "table",
    "title": "Release \u00b7 $deployment",
    "gridPos": {

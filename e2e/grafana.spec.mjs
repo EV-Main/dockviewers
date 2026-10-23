@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { expect, test } from '@playwright/test'
 
 // The Grafana plugin over `nix run .#dev -- grafana`'s testdata fixture, a twin of devops'
@@ -6,6 +8,12 @@ import { expect, test } from '@playwright/test'
 
 const DOCK = 'a/evmain-dockviewers-app/d/dv-fixture'
 const PANELS = 9
+const FIXTURE = JSON.parse(readFileSync(new URL('../dockviewers_grafana/plugin/provisioning/fixtures/dv-fixture.json', import.meta.url)))
+/** Panel ids by their `dock` key. */
+const AUTHORED = FIXTURE.panels.filter((p) => p.dock?.minH).map((p) => [p.id, p.dock.minH])
+const COMPILED = FIXTURE.panels.filter((p) => p.dock?.precompile).map((p) => p.id)
+const compiled = (page, id) =>
+	page.waitForFunction((k) => JSON.parse(localStorage.getItem(k) ?? 'null'), `dv-grafana-min-dv-fixture-panel-${id}`, { timeout: 30_000 }).then((h) => h.jsonValue())
 
 const boot = async (page, path = DOCK) => {
 	await page.goto(path)
@@ -33,6 +41,7 @@ test.beforeEach(async ({ page }) => await boot(page))
 
 test('every panel renders natively inside a tile', async ({ page }) => {
 	expect(await page.locator('.dv-tile').count()).toBe(PANELS)
+	await Promise.all(COMPILED.map((id) => compiled(page, id))) // a compile probes its slot past the tile
 	const inside = await page.$$eval('.dv-grafana-slot', (slots) => {
 		const tiles = [...document.querySelectorAll('.dv-tile')].map((t) => t.getBoundingClientRect())
 		return slots.map((s) => {
@@ -127,6 +136,44 @@ test('an idle dock does no work beyond a native dashboard', async ({ page }) => 
 	await page.waitForLoadState('networkidle')
 	const native = await idle()
 	expect(dock.longTasks).toBeLessThanOrEqual(native.longTasks + 1)
+})
+
+test('declared and compiled mins hold when the window halves', async ({ page }) => {
+	expect(AUTHORED.length && COMPILED.length, 'the fixture declares both kinds').toBeTruthy()
+	const sizes = await Promise.all(COMPILED.map((id) => compiled(page, id)))
+	await page.setViewportSize({ width: 1600, height: 500 })
+	const slotH = (id) => page.$eval(`.dv-grafana-slot[data-panel="panel-${id}"]`, (s) => s.clientHeight)
+	for (const [id, minH] of AUTHORED) {
+		await expect.poll(() => slotH(id), `panel ${id} keeps its ${minH}px`).toBeGreaterThanOrEqual(minH)
+	}
+	for (const [i, id] of COMPILED.entries()) {
+		await expect.poll(() => slotH(id), `panel ${id} keeps its compiled ${sizes[i].h}px`).toBeGreaterThanOrEqual(sizes[i].h)
+		const clipped = await page.$eval(`.dv-grafana-slot[data-panel="panel-${id}"]`, (s) =>
+			[s, ...s.querySelectorAll('*')].filter((e) => {
+				const c = getComputedStyle(e)
+				return (e === s || c.overflowX !== 'visible' || c.overflowY !== 'visible') && (e.scrollHeight > e.clientHeight + 1 || e.scrollWidth > e.clientWidth + 1)
+			}).length
+		)
+		expect(clipped, `panel ${id}'s content is whole`).toBe(0)
+	}
+})
+
+test('a second load takes compiled sizes from the cache, without flexing', async ({ page }) => {
+	const first = await Promise.all(COMPILED.map((id) => compiled(page, id)))
+	await page.addInitScript(() => {
+		window.dvFlexed = 0
+		new MutationObserver((ms) => (window.dvFlexed += ms.filter((m) => m.target.matches?.('.dv-grafana-slot')).length)).observe(document, {
+			subtree: true,
+			attributes: true,
+			attributeFilter: ['style'],
+		})
+	})
+	await page.reload()
+	await boot(page, page.url())
+	await page.waitForLoadState('networkidle')
+	await page.waitForTimeout(2000)
+	expect(await page.evaluate(() => window.dvFlexed), 'no slot was probed').toBe(0)
+	expect(await Promise.all(COMPILED.map((id) => compiled(page, id)))).toEqual(first)
 })
 
 test('an unsupported dashboard names what it refuses', async ({ page }) => {

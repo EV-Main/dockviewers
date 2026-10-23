@@ -14,7 +14,8 @@ before.
 - `grafana.spec.mjs` — the Grafana plugin (`dockviewers_grafana`) against `nix run .#dev -- grafana`
   and its testdata fixture: panels render natively in tiles, tab-joins switch panels, an inactive
   tab issues no queries, the root re-measures on a container-only resize, the cache survives a
-  reload, `?` stays Grafana's, and an idle dock mutates nothing. Chromium only, as its own project:
+  reload, declared and compiled mins hold when the window halves, a second load takes compiled sizes
+  from the cache, `?` stays Grafana's, and an idle dock mutates nothing. Chromium only, as its own project:
   `npm test -- --project grafana` (`GRAFANA_URL` overrides `http://127.0.0.1:54581`).
 
 ## Run

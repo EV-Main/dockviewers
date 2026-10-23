@@ -8,13 +8,19 @@ import { ContextMenu, Menu, useStyles2 } from '@grafana/ui';
 
 import init, { Dock, mount, Seed } from '../wasm/dockviewers_grafana';
 import wasm from '../wasm/dockviewers_grafana_bg.wasm';
+import { cached, compile, Precompile } from './precompile';
 
 const ready = init({ module_or_path: wasm });
+
+/** What a panel's content needs, in CSS px (`0` = nothing beyond the chrome), or a size to compile. */
+export type DockSpec = { minW: number; minH: number } | { precompile: Precompile };
 
 interface DockLayoutState extends SceneObjectState {
   children: VizPanel[];
   /** By panel key, which is also the panel's dock id. */
   gridPos: Record<string, GridPos>;
+  /** By panel key. */
+  dock: Record<string, DockSpec>;
   storageKey: string;
   /** Interpolated, by panel key. */
   titles: Map<string, string>;
@@ -37,7 +43,7 @@ export class DockLayout extends SceneObjectBase<DockLayoutState> {
 }
 
 function DockLayoutRenderer({ model }: SceneComponentProps<DockLayout>) {
-  const { children, gridPos, storageKey, titles } = model.useState();
+  const { children, gridPos, dock: specs, storageKey, titles } = model.useState();
   const styles = useStyles2(getStyles);
   const root = useRef<HTMLDivElement>(null);
   const pointer = useRef({ x: 0, y: 0 });
@@ -54,7 +60,9 @@ function DockLayoutRenderer({ model }: SceneComponentProps<DockLayout>) {
       }
       const seeds = children.map((p) => {
         const g = gridPos[p.state.key!];
-        return new Seed(p.state.key!, p.state.title, g.x!, g.y!, g.w, g.h);
+        const spec = specs[p.state.key!];
+        const min = 'precompile' in spec ? (cached(spec.precompile) ?? { w: 0, h: 0 }) : { w: spec.minW, h: spec.minH };
+        return new Seed(p.state.key!, p.state.title, g.x!, g.y!, g.w, g.h, min.w, min.h);
       });
       live = mount(
         root.current!,
@@ -69,13 +77,46 @@ function DockLayoutRenderer({ model }: SceneComponentProps<DockLayout>) {
       gone = true;
       live?.unmount();
     };
-  }, [children, gridPos, storageKey]);
+  }, [children, gridPos, specs, storageKey]);
 
   useEffect(() => {
     if (dock && titles.size) {
       dock.set_titles(titles);
     }
   }, [dock, titles]);
+
+  // A slot is the panel's for the dock's lifetime, so each precompile miss compiles once per mount.
+  const compiling = useRef(new Map<string, AbortController>());
+  useEffect(() => {
+    if (!dock) {
+      return;
+    }
+    for (const p of children) {
+      const key = p.state.key!;
+      const spec = specs[key];
+      const slot = slots.get(key);
+      if (!('precompile' in spec) || !slot || compiling.current.has(key) || cached(spec.precompile)) {
+        continue;
+      }
+      const abort = new AbortController();
+      compiling.current.set(key, abort);
+      compile(spec.precompile, p, slot, abort.signal).then(
+        ({ w, h }) => dock.set_min(key, w, h),
+        (e) => {
+          if (!abort.signal.aborted) {
+            throw e;
+          }
+        }
+      );
+    }
+  }, [dock, children, specs, slots]);
+  useEffect(() => {
+    const live = compiling.current;
+    return () => {
+      live.forEach((a) => a.abort());
+      live.clear();
+    };
+  }, [dock]);
 
   const closed = menu && dock ? children.filter((p) => !dock.hosted().includes(p.state.key!)) : [];
   return (
